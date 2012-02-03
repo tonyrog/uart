@@ -202,7 +202,11 @@ static int uart_unix_write(void* arg, void* buf, size_t nbytes)
 // TIOCMIWAIT   wait for modem bits to change
 // TCIOGICOUNT  count number of changes
 //
+#if defined(CCAR_OFLOW)
 #define HWFLOW  CCAR_OFLOW   // DCD flow control of output
+#else
+#define HWFLOW CRTSCTS
+#endif
 
 static int uart_unix_get_com_state(void* arg, uart_com_state_t* state)
 {

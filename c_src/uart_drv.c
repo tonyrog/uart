@@ -550,7 +550,7 @@ ErlDrvSSizeT get_opts(uart_ctx_t* ctx, char* buf, ErlDrvSizeT len,
     uint8_t* ptr_end = ptr + len;
     uint8_t* dst = (uint8_t*) *rbuf;
     uint8_t* dst0 = dst;
-    uint32_t need = 0;
+    ErlDrvSizeT need = 0;
     int i;
 
 #define PUT_OPT(x) do {							\
@@ -1361,6 +1361,7 @@ static int deq_async(uart_ctx_t* ctx, int* ap, ErlDrvTermData* cp, int* rp)
 /* send message:
 **     {uart_async, Port, Ref, ok} 
 */
+#if 0
 static int send_async_ok(ErlDrvPort port, ErlDrvTermData Port, int Ref, 
 			 ErlDrvTermData recipient)
 {
@@ -1376,6 +1377,7 @@ static int send_async_ok(ErlDrvPort port, ErlDrvTermData Port, int Ref,
     
     return driver_send_term(port, recipient, spec, i);
 }
+#endif
 
 /* send message:
 **      {uart_async, Port, Ref, {error,Reason}}
@@ -1400,7 +1402,7 @@ static int send_async_error(ErlDrvPort port, ErlDrvTermData Port, int Ref,
     return driver_send_term(port, recipient, spec, i);
 }
 
-
+#if 0
 static int async_ok(uart_ctx_t* ctx)
 {
     int req;
@@ -1411,6 +1413,7 @@ static int async_ok(uart_ctx_t* ctx)
 	return -1;
     return send_async_ok(ctx->port, ctx->dport, aid, caller);
 }
+#endif
 
 static int async_error_am(uart_ctx_t* ctx, ErlDrvTermData reason)
 {
@@ -1487,10 +1490,12 @@ static int uart_reply_error_am(uart_ctx_t* ctx, ErlDrvTermData reason)
 /* send:
 **   {uart_reply, S, {error, Reason}} 
 */
+#if 0
 static int uart_reply_error(uart_ctx_t* ctx, int err)
 {
     return uart_reply_error_am(ctx, error_atom(err));
 }
+#endif
 
 /* 
 ** Deliver port data from buffer 
