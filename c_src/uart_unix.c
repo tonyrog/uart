@@ -24,6 +24,13 @@
 
 #include "uart_api.h"
 
+typedef struct {
+    ErlDrvPort port;  // from open
+    int        fd;
+    int        reading;
+    int        writing;
+} uart_unix_data_t;
+
 #define HANDLE(h) ((void*) ((long)(h)))
 #define FD(h)     ((int)((long)(h)))
 
@@ -157,38 +164,61 @@ static unsigned int to_speed(int baud)
 #endif
 }
 
-int uart_unix_open(uart_handle_t* hndl, char* devicename)
+int uart_unix_open(ErlDrvPort port,uart_handle_t* hndl,char* devicename)
 {
     int fd;
     int flags;
+    uart_unix_data_t* ud;
 
-    if ((fd = open(devicename, O_RDWR|O_NDELAY|O_NOCTTY)) < 0)
-	return fd;
+    if (!(ud = (uart_unix_data_t*) driver_alloc(sizeof(uart_unix_data_t))))
+	return -1;
+    memset(ud, 0, sizeof(uart_unix_data_t));
+    if ((ud->fd = open(devicename, O_RDWR|O_NDELAY|O_NOCTTY)) < 0)
+	goto error;
+    ud->port = port;
+    fd = ud->fd;
     flags = fcntl(fd, F_GETFL, 0);
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);   // non-blocking!!!
 
     tcflush(fd, TCOFLUSH);
     tcflush(fd, TCIFLUSH);
-    hndl->data = HANDLE(fd);
+    hndl->data = ud;
     hndl->api = &uart_unix_api;
     hndl->flags = UART_HF_OPEN;   // device is open
     return 0;
+error:
+    if (ud->fd >= 0) close(ud->fd);
+    driver_free(ud);
+    return -1;
 }
 
 static int uart_unix_close(void* arg)
 {
-    return close(FD(arg));
+    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
+    driver_select(ud->port, (ErlDrvEvent)((long)(ud->fd)), ERL_DRV_USE, 0);
+    DEBUGF("uart_unix_close:");
+    driver_free(ud);
+    return 0;
 }
 
 static int uart_unix_read(void* arg, void* buf, size_t nbytes)
 {
-    return read(FD(arg), buf, nbytes);
+    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
+    return read(ud->fd, buf, nbytes);
 }
 
 static int uart_unix_write(void* arg, void* buf, size_t nbytes)
 {
-    return write(FD(arg), buf, nbytes);
+    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
+    return write(ud->fd, buf, nbytes);
 }
+
+static int uart_unix_select(void* arg, int mode, int on)
+{
+    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
+    return driver_select(ud->port, (ErlDrvEvent)((long)(ud->fd)), mode, on);
+}
+
 
 // FIXME: at least on darwin there are 
 // CCTS_OFLOW  - CTS flow control output
@@ -210,9 +240,10 @@ static int uart_unix_write(void* arg, void* buf, size_t nbytes)
 
 static int uart_unix_get_com_state(void* arg, uart_com_state_t* state)
 {
+    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
     struct termios tio;
     
-    if (tcgetattr(FD(arg), &tio) < 0) 
+    if (tcgetattr(ud->fd, &tio) < 0) 
 	return -1;
 
     // input baud reate
@@ -262,10 +293,11 @@ static int uart_unix_get_com_state(void* arg, uart_com_state_t* state)
 
 static int uart_unix_set_com_state(void* arg, uart_com_state_t* state)
 {
+    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
     struct termios tio;
 
     // read current state
-    if (tcgetattr(FD(arg), &tio) < 0)
+    if (tcgetattr(ud->fd, &tio) < 0)
 	return -1;
 
     cfsetispeed(&tio, to_speed(state->ibaud));
@@ -343,42 +375,47 @@ static int uart_unix_set_com_state(void* arg, uart_com_state_t* state)
 
 //    tio.c_cflag &= ~HUPCL;   // do NOT hangup-on-close 
     
-    tcflush(FD(arg), TCIFLUSH);
-    return tcsetattr(FD(arg), TCSANOW, &tio);
+    tcflush(ud->fd, TCIFLUSH);
+    return tcsetattr(ud->fd, TCSANOW, &tio);
 }
 
 static int uart_unix_send_break(void* arg, int duration)
 {
-    return tcsendbreak(FD(arg), duration);
+    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
+    return tcsendbreak(ud->fd, duration);
 }
 
 static int uart_unix_send_xon(void* arg)
 {
-    return tcflow(FD(arg), TCION);
+    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
+    return tcflow(ud->fd, TCION);
 }
 
 static int uart_unix_send_xoff(void* arg)
 {
-    return tcflow(FD(arg), TCIOFF);
+    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
+    return tcflow(ud->fd, TCIOFF);
 }
 
 static int uart_unix_hangup(void* arg)
 {
+    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
     struct termios tio;
 
     // read current state
-    if (tcgetattr(FD(arg), &tio) < 0)
+    if (tcgetattr(ud->fd, &tio) < 0)
 	return -1;
     cfsetispeed(&tio, B0);
     cfsetospeed(&tio, B0);
-    return tcsetattr(FD(arg), TCSAFLUSH, &tio);
+    return tcsetattr(ud->fd, TCSAFLUSH, &tio);
 }
 
 static int uart_unix_get_modem_state(void* arg, uart_modem_state_t* state)
 {
+    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
     int status, r, s;
 
-    if ((r = ioctl(FD(arg), TIOCMGET, &status)) < 0)
+    if ((r = ioctl(ud->fd, TIOCMGET, &status)) < 0)
 	return r;
     s = 0;
     if ((status & TIOCM_DTR) != 0) s |= UART_MODEM_DTR;
@@ -393,6 +430,7 @@ static int uart_unix_get_modem_state(void* arg, uart_modem_state_t* state)
 
 static int uart_unix_set_modem_state(void* arg, uart_modem_state_t state, int on)
 {
+    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
     if (state) {
 	int status = 0;
 	if (state & UART_MODEM_DTR) status |= TIOCM_DTR;  // out
@@ -402,9 +440,9 @@ static int uart_unix_set_modem_state(void* arg, uart_modem_state_t state, int on
 	if (state & UART_MODEM_RI)  status |= TIOCM_RI;   // in|out?
 	if (state & UART_MODEM_DSR) status |= TIOCM_DSR;  // in
 	if (on) 
-	    return ioctl(FD(arg), TIOCMBIS, &status);
+	    return ioctl(ud->fd, TIOCMBIS, &status);
 	else
-	    return ioctl(FD(arg), TIOCMBIC, &status);
+	    return ioctl(ud->fd, TIOCMBIC, &status);
     }
     return 0;
 }

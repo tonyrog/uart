@@ -54,26 +54,15 @@ UART_DRV_OBJS = \
 	$(OBJDIR)/uart_unix.o \
 	$(OBJDIR)/packet_parser.o
 
-all:
-	$(MAKE) driver TYPE=debug
+release:
 	$(MAKE) driver TYPE=release
 
 debug:
 	$(MAKE) driver TYPE=debug
 
-release:
-	$(MAKE) driver TYPE=release
-
 driver: $(UART_DRV)
 
 clean:
-        $(MAKE) clean_internal TYPE=release
-        $(MAKE) clean_internal TYPE=debug
-
-clean_debug:
-        $(MAKE) clean_internal TYPE=debug
-
-clean_internal:
 	rm -f $(UART_DRV)
 	rm -f $(UART_DRV_OBJS)
 

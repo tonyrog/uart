@@ -1,33 +1,32 @@
 #
-# Make the sl (serial line driver)
+# Make the uart (serial line driver)
 #
 CC=gcc
 DLL=dll
 OBJ=obj
 OUT=-o 
 LD_SHARED=ld -shared
-ERLDIR=C:/Program/erl5.7.2
+ERLDIR=C:/Program/erl5.9
 ERLC=$(ERLDIR)/bin/erlc
+TARGET = ../priv/uart_drv.$(DLL)
 
 # CYGWIN:?  -mno-cygwin
-CFLAGS +=  -I$(ERLDIR)/usr/include -D__WIN32__
+CFLAGS +=  -I$(ERLDIR)/usr/include -DDEBUG -D__WIN32__ -DWIN32 -D_MT -D_DLL
 WIN_LIBS = -lkernel32 -luser32 -ladvapi32 # -lgdi32 -lcomdlg32 # -lc
 
 DLL_LIBS = $(ERLDIR)/usr/lib/erts_MD.lib
+OBJS = uart_drv.$(OBJ) uart_win.$(OBJ) packet_parser.$(OBJ) dosmap.$(OBJ)
 
-all: sl_drv.$(DLL) sl.beam slt.beam gterm.beam
+all: $(TARGET)
 
 
-sl_drv.$(DLL): sl_drv.$(OBJ)
-	$(CC) $(OUT)$@ -shared sl_drv.$(OBJ) $(DLL_LIBS) $(WIN_LIBS)
-
-%.beam:	%.erl
-	$(ERLC) $<
+$(TARGET): $(OBJS)
+	$(CC) $(OUT)$@ -shared $(OBJS) $(DLL_LIBS) $(WIN_LIBS)
 
 %.obj:	%.c
 	$(CC) -c -o $@ $< $(CFLAGS)
 
-clean : 
-	/bin/rm -f *.$(OBJ) sl_drv.$(DLL)
+clean:
+	/bin/rm -f $(OBJS) sl_drv.$(DLL)
 
 

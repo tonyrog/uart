@@ -11,9 +11,16 @@
 #include "windows.h"
 #include "erl_driver.h"
 
-typedef HANDLE  com_t;
-#define INVALID INVALID_HANDLE_VALUE
-#define DRV_EVENT(evt) ((ErlDrvEvent)(evt))
+#define EAGAIN       ERROR_IO_PENDING
+#define EWOULDBLOCK  ERROR_IO_PENDING
+#define ENOMEM       ERROR_NOT_ENOUGH_MEMORY
+#define EINVAL       ERROR_BAD_ARGUMENTS
+#define EBUSY        ERROR_BUSY
+#define EOVERFLOW    ERROR_TOO_MANY_CMDS
+#define EMSGSIZE     ERROR_NO_DATA
+#define ENOTCONN     ERROR_PIPE_NOT_CONNECTED
+#define EINTR        ERROR_INVALID_AT_INTERRUPT_TIME //dummy
+
 #else
 
 #include <stdio.h>
@@ -32,11 +39,6 @@ typedef HANDLE  com_t;
 #include <sys/uio.h>
 #include <sys/ioctl.h>
 
-typedef int     com_t;
-#define INVALID -1
-#define DRV_EVENT(evt) ((ErlDrvEvent)((long)(evt)))
-#define uart_errno() errno
-
 #endif
 
 #ifdef HAVE_FTDI
@@ -48,11 +50,6 @@ typedef int     com_t;
 #include "uart_api.h"
 #include "packet_parser.h"
 
-#ifdef DEBUG
-#define DEBUGF(args...) uart_drv_emit_error(__FILE__,__LINE__,args)
-#else
-#define DEBUGF(args...)
-#endif
 
 typedef struct {
     char         device_name[256];
@@ -96,7 +93,7 @@ typedef struct _uart_ctx_t
     ErlDrvTermData   dport;     // the port identifier as DriverTermData
     uart_handle_t    handle;    // Connection handle
     uint32_t         flags;     // uart UART_F_xxx
-
+    int              error;     // last known error code
     uint32_t         sflags;    // flags for update state & opts
     uart_com_state_t state;     // communication params 
     uart_opt_t       option;
@@ -395,6 +392,27 @@ static ErlDrvTermData am_scheme;
 
 static ErlDrvEntry uart_drv_entry;
 
+#ifdef __WIN32__
+extern void _dosmaperr(DWORD);
+extern int  errno;
+
+static int uart_errno(uart_ctx_t* ctx)
+{
+    int error = GetLastError();
+    _dosmaperr(error);
+    ctx->error = errno;
+    return errno;
+}
+#else
+static int uart_errno(uart_ctx_t* ctx)
+{
+    int err = errno;
+    ctx->error = err;
+    return err;
+}
+#endif
+
+
 #ifdef HAVE_FTDI
 const char* ft_strerror(FT_STATUS status)
 {
@@ -490,20 +508,20 @@ static inline void put_uint32(uint8_t* ptr, uint32_t v)
     ptr[3] = v;
 }
 
+static void stop_read_device(uart_ctx_t* ctx)
+{
+    if (ctx->flags & UART_F_OPEN) {
+	uart_select(&ctx->handle, ERL_DRV_READ,0);
+    }
+}
+
 static int close_device(uart_ctx_t* ctx)
 {
     if (ctx->flags & UART_F_OPEN) {
-	driver_select(ctx->port,DRV_EVENT(ctx->handle.data),ERL_DRV_USE,0);
 	ctx->flags &= ~UART_F_OPEN;
+	uart_close(&ctx->handle);
     }
     return 0;
-}
-
-static void close_read_device(uart_ctx_t* ctx)
-{
-    if (ctx->flags & UART_F_OPEN) {
-	driver_select(ctx->port,DRV_EVENT(ctx->handle.data),ERL_DRV_READ,0);
-    }
 }
 
 static int open_device(uart_ctx_t* ctx)
@@ -511,14 +529,14 @@ static int open_device(uart_ctx_t* ctx)
     int r;
 
     if (ctx->flags & UART_F_OPEN) {  // must close first!
-	errno = EALREADY; 
+	errno = EBUSY;
 	return -1;
     }
     // FIXME: handle ftdi flavours when avaiable
 #ifdef __WIN32__
-    r = uart_win_open(&ctx->handle, ctx->option.device_name);
+    r = uart_win_open(ctx->port, &ctx->handle, ctx->option.device_name);
 #else
-    r = uart_unix_open(&ctx->handle, ctx->option.device_name);
+    r = uart_unix_open(ctx->port, &ctx->handle, ctx->option.device_name);
 #endif
     if (r >= 0)
 	ctx->flags |= UART_F_OPEN;
@@ -784,14 +802,23 @@ int set_opts(uart_ctx_t* ctx, char* buf, ErlDrvSizeT len)
 	strcpy(ctx->option.device_name, option.device_name);
 	if (open_device(ctx) < 0)
 	    return -1;
-	if (uart_set_com_state(&ctx->handle, &state) < 0)
+	DEBUGF("set_opts: device open");
+#ifdef DEBUG
+	dump_com_state(stderr, &state);
+#endif
+	if (uart_set_com_state(&ctx->handle, &state) < 0) {
+	    DEBUGF("set_opts: uart_set_com_state failed");
 	    return -1;
+	}
 	sflags = 0;
 	if (uart_get_com_state(&ctx->handle, &state) >= 0) {
 	    DEBUGF("set_opts: com_state: after");
 #ifdef DEBUG
 	    dump_com_state(stderr, &state);
 #endif
+	}
+	else {
+	    DEBUGF("set_opts: uart_get_com_state failed");
 	}
     }
     else if (sflags & UART_OPT_COMM) {
@@ -819,12 +846,14 @@ int set_opts(uart_ctx_t* ctx, char* buf, ErlDrvSizeT len)
     ctx->bit8   = bit8;
 
     if (ctx->flags & UART_F_OPEN) {
-	if (old_active != option.active)
-	    driver_select(ctx->port,DRV_EVENT(ctx->handle.data),ERL_DRV_READ,
-			  (option.active > 0));
-	if (ctx->option.active) { // was active
+	if (old_active != option.active) {
+	    DEBUGF("set_opts: uart_select %d", (option.active > 0));
+	    uart_select(&ctx->handle, ERL_DRV_READ,(option.active > 0));
+	}
+	if (ctx->option.active) { // now active
 	    if (!old_active || (ctx->option.htype != old_htype)) {
-		/* passive => active change OR header type change in active mode */
+		// was passive => now active OR
+		//  packet type is changed in active mode, read again!
 		return 1;
 	    }
 	    return 0;
@@ -1946,7 +1975,7 @@ static int uart_recv_closed(uart_ctx_t* ctx)
 	    clear_output(ctx);
 	    close_device(ctx);
 	} else {
-	    close_read_device(ctx);
+	    stop_read_device(ctx);
 	}
 	async_error_am_all(ctx, am_closed);
 	/* next time EXBADSEQ will be delivered  */
@@ -1957,7 +1986,7 @@ static int uart_recv_closed(uart_ctx_t* ctx)
 	if (ctx->option.exitf) {
 	    driver_exit(ctx->port, 0);
 	} else {
-	    close_read_device(ctx);
+	    stop_read_device(ctx);
 	}
 	DEBUGF("tcp_recv_closed(%ld): active close\r\n", port);
     }
@@ -1989,7 +2018,7 @@ static int rx_recv_error(uart_ctx_t* ctx, int err)
 	    if (ctx->option.exitf) {
 		close_device(ctx);
 	    } else {
-		close_read_device(ctx);
+		stop_read_device(ctx);
 	    }
 	    async_error_am_all(ctx, error_atom(err));
 	} else {
@@ -2150,7 +2179,7 @@ static int uart_deliver(uart_ctx_t* ctx, int len)
 		DEBUGF("uart_deliver(%ld): cancel_timer", ctx->port);
 		driver_cancel_timer(ctx->port);
 	    }
-	    driver_select(ctx->port,DRV_EVENT(ctx->handle.data),ERL_DRV_READ,0);
+	    uart_select(&ctx->handle,ERL_DRV_READ,0);
 	    if (ctx->i_buf != NULL)
 		rx_restart_input(ctx);
 	}
@@ -2215,11 +2244,7 @@ static int uart_recv(uart_ctx_t* ctx, int request_len)
     n = uart_read(&ctx->handle, ctx->i_ptr, nread);
 
     if (n < 0) {
-	int err = uart_errno();
-	if (err == ECONNRESET) {
-	    DEBUGF(" => detected close");
-	    return uart_recv_closed(ctx);
-	}
+	int err = uart_errno(ctx);
 	if (err == EAGAIN) {
 	    DEBUGF(" => would block");
 	    return 0;
@@ -2445,7 +2470,7 @@ static int uart_send(uart_ctx_t* ctx, char* ptr, int len)
 		int r;
 		r = uart_write(&ctx->handle, iov[i].iov_base, iov[i].iov_len);
 		if (r < 0) {
-		    int err = uart_errno();
+		    int err = uart_errno(ctx);
 		    if ((err != EAGAIN) && (err != EINTR)) {
 			DEBUGF("uart_tx(%ld): s=%ld, sock_send errno = %ld",
 			    (long)ctx->port,(long)ctx->handle.data, err);
@@ -2475,7 +2500,7 @@ static int uart_send(uart_ctx_t* ctx, char* ptr, int len)
 	    driver_enq(ix, ptr+n, len-n);
 
 	}
-	driver_select(ctx->port, DRV_EVENT(ctx->handle.data), ERL_DRV_WRITE, 1);
+	uart_select(&ctx->handle,ERL_DRV_WRITE,1);
     }
     return 0;
 }
@@ -2594,27 +2619,27 @@ static ErlDrvSSizeT uart_drv_ctl(ErlDrvData d,
     case UART_CMD_OPEN:
 	close_device(ctx);
 	if (open_device(ctx) < 0)
-	    return ctl_error(uart_errno(), rbuf, rsize);
+	    return ctl_error(uart_errno(ctx), rbuf, rsize);
 	return ctl_reply(UART_OK, NULL, 0, rbuf, rsize);
 
     case UART_CMD_HANGUP:
 	if (uart_hangup(&ctx->handle) < 0)
-	    return ctl_error(uart_errno(), rbuf, rsize);
+	    return ctl_error(uart_errno(ctx), rbuf, rsize);
 	return ctl_reply(UART_OK, NULL, 0, rbuf, rsize);
 
     case UART_CMD_CLOSE:
 	if (close_device(ctx) < 0) 
-	    return ctl_error(uart_errno(), rbuf, rsize);
+	    return ctl_error(uart_errno(ctx), rbuf, rsize);
 	return ctl_reply(UART_OK, NULL, 0, rbuf, rsize);
 
     case UART_CMD_XON:
 	if (uart_send_xon(&ctx->handle) < 0)
-	    return ctl_error(uart_errno(), rbuf, rsize);
+	    return ctl_error(uart_errno(ctx), rbuf, rsize);
 	return ctl_reply(UART_OK, NULL, 0, rbuf, rsize);
 
     case UART_CMD_XOFF:
 	if (uart_send_xoff(&ctx->handle) < 0)
-	    return ctl_error(uart_errno(), rbuf, rsize);
+	    return ctl_error(uart_errno(ctx), rbuf, rsize);
 	return ctl_reply(UART_OK, NULL, 0, rbuf, rsize);
 
     case UART_CMD_BREAK: {
@@ -2623,7 +2648,7 @@ static ErlDrvSSizeT uart_drv_ctl(ErlDrvData d,
 	    return ctl_error(EINVAL, rbuf, rsize);
 	duration = get_uint32((unsigned char*)buf);
 	if (uart_send_break(&ctx->handle, duration) < 0)
-	    return ctl_error(uart_errno(), rbuf, rsize);
+	    return ctl_error(uart_errno(ctx), rbuf, rsize);
 	return ctl_reply(UART_OK, NULL, 0, rbuf, rsize);
     }	    
 
@@ -2641,7 +2666,7 @@ static ErlDrvSSizeT uart_drv_ctl(ErlDrvData d,
     case UART_CMD_GETOPTS: {
 	ErlDrvSSizeT rlen;
 	if ((rlen = get_opts(ctx, buf, len, rbuf, rsize)) < 0)
-	    return ctl_error(uart_errno(), rbuf, rsize);
+	    return ctl_error(uart_errno(ctx), rbuf, rsize);
 	DEBUGF("uart_drv_ctl: UART_CMD_GETOPTS: rlen = %ld", rlen);
 	return rlen;
     }
@@ -2664,7 +2689,7 @@ static ErlDrvSSizeT uart_drv_ctl(ErlDrvData d,
 	char resp[sizeof(uint16_t)];
 	uart_modem_state_t state;
 	if (uart_get_modem_state(&ctx->handle, &state) < 0)
-	    return ctl_error(uart_errno(), rbuf, rsize);
+	    return ctl_error(uart_errno(ctx), rbuf, rsize);
 	put_uint16((unsigned char*)resp, (uint16_t) state);
 	return ctl_reply(UART_OK, resp, sizeof(resp), rbuf, rsize);
     }
@@ -2675,7 +2700,7 @@ static ErlDrvSSizeT uart_drv_ctl(ErlDrvData d,
 	    return ctl_error(EINVAL, rbuf, rsize);
 	state = get_uint32((unsigned char*)buf);
 	if (uart_set_modem_state(&ctx->handle, state, 1) < 0)
-	    return ctl_error(uart_errno(), rbuf, rsize);
+	    return ctl_error(uart_errno(ctx), rbuf, rsize);
 	return ctl_reply(UART_OK, NULL, 0, rbuf, rsize);
     }
 
@@ -2685,14 +2710,14 @@ static ErlDrvSSizeT uart_drv_ctl(ErlDrvData d,
 	    return ctl_error(EINVAL, rbuf, rsize);
 	state = get_uint32((unsigned char*)buf);
 	if (uart_set_modem_state(&ctx->handle, state, 0) < 0)
-	    return ctl_error(uart_errno(), rbuf, rsize);
+	    return ctl_error(uart_errno(ctx), rbuf, rsize);
 	return ctl_reply(UART_OK, NULL, 0, rbuf, rsize);
     }
 
     case UART_CMD_UNRECV:
 	DEBUGF("uart_ctl(%ld): UNRECV\r\n", (long)ctx->port); 
 	if (!(ctx->flags & UART_F_OPEN))
-   	    return ctl_error(ENOTCONN, rbuf, rsize);
+   	    return ctl_error(EINVAL, rbuf, rsize);
 	uart_push_buffer(ctx, buf, len);
 	if (ctx->option.active)  // FIXME: may work in all active modes ?
 	    uart_deliver(ctx, 0);
@@ -2713,7 +2738,7 @@ static ErlDrvSSizeT uart_drv_ctl(ErlDrvData d,
 	    (long)ctx->port, timeout, n);
 
 	if (ctx->option.active)
-	    return ctl_error(EINPROGRESS, rbuf, rsize);
+	    return ctl_error(EBUSY, rbuf, rsize);
 
 	if (!(ctx->flags & UART_F_OPEN)) {
 	    if (ctx->flags & UART_F_DELAYED_CLOSE_RECV) {
@@ -2721,23 +2746,22 @@ static ErlDrvSSizeT uart_drv_ctl(ErlDrvData d,
 				UART_F_DELAYED_CLOSE_SEND);
 		return ctl_reply(UART_ERROR, "closed", 6, rbuf, rsize);
 	    }
-	    return ctl_error(ENOTCONN, rbuf, rsize);
+	    return ctl_error(EINVAL, rbuf, rsize);
 	}
 	if ((ctx->option.htype != UART_PB_RAW) && (n != 0))
 	    return ctl_error(EINVAL, rbuf, rsize);
 	if (n > UART_MAX_PACKET_SIZE)
 	    return ctl_error(ENOMEM, rbuf, rsize);
 	id = NEW_ASYNC_ID();
-	if (enq_async(ctx, id, UART_CMD_RECV) < 0)
-	    return ctl_error(EALREADY, rbuf, rsize);
+	if (enq_async(ctx, id, UART_CMD_RECV) < 0) // limit?
+	    return ctl_error(EOVERFLOW, rbuf, rsize);
 	if (uart_recv(ctx, n) == 0) {
 	    if (timeout == 0)
 		async_error_am(ctx, am_timeout);
 	    else {
 		if (timeout != UART_INFINITY)
 		    driver_set_timer(ctx->port, timeout);
-		driver_select(ctx->port,DRV_EVENT(ctx->handle.data),
-			      ERL_DRV_READ,1);
+		uart_select(&ctx->handle,ERL_DRV_READ,1);
 	    }
 	}
 	put_uint16((unsigned char*)resp, (uint16_t) id);
@@ -2764,22 +2788,8 @@ static void uart_drv_ready_input(ErlDrvData d, ErlDrvEvent e)
 
 static void uart_drv_ready_output(ErlDrvData d, ErlDrvEvent e)
 {
-    uart_ctx_t* ctx = (uart_ctx_t*) d;
-#ifdef __WIN32__
-    DWORD n;
-    // This code handle OVERLAPPED io output event 
-    DEBUGF("uart_ready_output: qsize=%d", driver_sizeq(ctx->port));
-    ctx->o_pending = 0;
-    driver_select(ctx->port, DRV_EVENT(ctx->out.hEvent),ERL_DRV_READ,0);
-    if (!GetOverlappedResult(ctx->com, &ctx->out, &n, FALSE)) {
-	/* Output error */
-	return;
-    }
-    /* Dequeue ? */
-#else
     (void) e;
-#endif
-    tx_again(ctx);
+    tx_again((uart_ctx_t*) d);
 }
 
 // operation timed out
@@ -2800,20 +2810,19 @@ static void uart_drv_timeout(ErlDrvData d)
     }
     else {
 	/* assume recv timeout */
-	driver_select(ctx->port,DRV_EVENT(ctx->handle.data),ERL_DRV_READ,0);
+	uart_select(&ctx->handle,ERL_DRV_READ,0);
 	ctx->i_remain = 0;
 	async_error_am(ctx, am_timeout);
     }
 }
 
 
-static void uart_drv_stop_select(ErlDrvEvent event, void* ctx)
+static void uart_drv_stop_select(ErlDrvEvent event, void* arg)
 {
-    (void) ctx;
-
+    (void) arg;
     DEBUGF("uart_drv_stop_select s=%d", (long)event);
 #ifdef __WIN2__
-#error "fixme"
+    CloseHandle((Handle) event);
 #else
     close((int)(long)event);
 #endif

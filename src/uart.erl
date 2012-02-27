@@ -121,6 +121,7 @@
 options() ->
     [
      device,          %% string()
+     baud,            %% = ibaud+obaud
      ibaud,           %% unsigned()
      obaud,           %% unsigned()
      csize,           %% 5,6,7,8
@@ -151,6 +152,8 @@ options() ->
     ].
 
 
+getopt(P, baud) ->
+    getopt(P, ibaud);
 getopt(P, Opt) ->
     Arg = <<(encode_opt(Opt))>>,
     Reply = erlang:port_control(P, ?UART_CMD_GETOPTS, Arg),
@@ -160,15 +163,22 @@ getopt(P, Opt) ->
     end.
 
 getopts(P, Opts) when is_list(Opts) ->
-    Data = << <<(encode_opt(Opt))>> || Opt <- Opts >>,
+    Opts1 = translate_getopts(Opts),
+    Data = << <<(encode_opt(Opt))>> || Opt <- Opts1 >>,
     Reply = erlang:port_control(P, ?UART_CMD_GETOPTS, Data),
-    decode(Reply).
+    case decode(Reply) of
+	{ok, Values} ->
+	    {ok, translate_getopts_reply(Opts,Values)};
+	Error ->
+	    Error
+    end.
 
 setopt(P, Opt, Value) ->
     setopts(P, [{Opt,Value}]).
 
 setopts(P, Opts) ->
-    Data = << <<(encode_opt(Opt,Value))/binary>> || {Opt,Value} <- Opts >>,
+    Opts1 = translate_set_opts(Opts),
+    Data = << <<(encode_opt(Opt,Value))/binary>> || {Opt,Value} <- Opts1 >>,
     Reply = erlang:port_control(P, ?UART_CMD_SETOPTS, Data),
     decode(Reply).
 
@@ -266,6 +276,27 @@ recv0(Port, Length, Time) when is_port(Port), is_integer(Length), Length >= 0 ->
 async_recv(Port, Length, Time) ->
     Res = erlang:port_control(Port, ?UART_CMD_RECV, [<<Time:32,Length:32>>]),
     decode(Res).
+
+translate_set_opts([{baud,B}|Opts]) ->
+    [{ibaud,B},{obaud,B}|translate_set_opts(Opts)];
+translate_set_opts([Opt|Opts]) ->
+    [Opt|translate_set_opts(Opts)];
+translate_set_opts([]) ->
+    [].
+
+translate_getopts([baud|Opts]) ->
+    [ibaud|translate_getopts(Opts)];
+translate_getopts([Opt|Opts]) ->
+    [Opt|translate_getopts(Opts)];
+translate_getopts([]) ->
+    [].
+
+translate_getopts_reply([baud|Opts],[{ibaud,B}|Vs]) ->
+    [{baud,B}|translate_getopts_reply(Opts,Vs)];
+translate_getopts_reply([_Opt|Opts],[V|Vs]) ->
+    [V|translate_getopts_reply(Opts,Vs)];
+translate_getopts_reply([],[]) ->
+    [].
 
 
 decode(<<?UART_OK>>) ->
@@ -397,7 +428,12 @@ decode_opt(<<?UART_OPT_CLOSETMO,Value:32,Tail/binary>>) ->
 decode_opt(<<?UART_OPT_BUFFER,Value:32,Tail/binary>>) ->
     {{buffer, Value}, Tail};
 decode_opt(<<?UART_OPT_BIT8,Value:32,Tail/binary>>) ->
-    {{bit8, Value =/= 0}, Tail};
+    case Value of 
+	0 -> {{bit8,clear},Tail};
+	1 -> {{bit8,set},Tail};
+	2 -> {{bit8,on},Tail};
+	3 -> {{bit8,off},Tail}
+    end;
 decode_opt(<<?UART_OPT_EXITF,Value:32,Tail/binary>>) ->
     {{exit_on_close, Value =/= 0},Tail}.
 
@@ -554,8 +590,8 @@ encode_opt(bit8, on) ->
     <<?UART_OPT_BIT8, ?UART_BIT8_ON:32>>;
 encode_opt(bit8, off) ->
     <<?UART_OPT_BIT8, ?UART_BIT8_OFF:32>>;
-encode_opt(exit_on_close, X) ->
-    <<?UART_OPT_EXITF,?bool(X)>>.
+encode_opt(exit_on_close, X) when is_boolean(X) ->
+    <<?UART_OPT_EXITF,?bool(X):32>>.
 
 
 encode_opt(device) -> ?UART_OPT_DEVICE;

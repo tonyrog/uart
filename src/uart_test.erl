@@ -203,7 +203,7 @@ encode_decode() ->
 	 {send_timeout_close, -1}, {send_timeout_close, 0}, 
 	 {send_timeout_close, 1000},
 	 {buffer,0}, {buffer,1}, {buffer,1024*64},
-	 {but8,on}, {bit8,off}, {bit8,set}, {bit8,clear},
+	 {bit8,on}, {bit8,off}, {bit8,set}, {bit8,clear},
 	 {exit_on_close,true},	 {exit_on_close,false}
 	],
     Fail =
@@ -231,7 +231,7 @@ encode_decode() ->
 	 {deliver, beer},{deliver,1},
 	 {mode,sleep}, {mode,18},
 	 {buffer,-1},
-	 {but8,x},
+	 {bit8,x},
 	 {exit_on_close,x}
 	],
 

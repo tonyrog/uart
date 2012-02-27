@@ -6,6 +6,16 @@
 #define __UART_API__
 
 #include <stdint.h>
+
+#include "erl_driver.h"
+
+#ifdef DEBUG
+extern void uart_drv_emit_error(char* file, int line, ...);
+#define DEBUGF(args...) uart_drv_emit_error(__FILE__,__LINE__,args)
+#else
+#define DEBUGF(args...)
+#endif
+
 // This is the backend API - this make it possible to have alternate
 // implementations in the same binary - like FTDI and Linux for example.
 //
@@ -39,6 +49,7 @@ typedef struct {
     int (*close)(void* hndl);
     int (*read)(void* hndl, void* buf, size_t nbytes);
     int (*write)(void* hndl, void* buf, size_t nbytes);
+    int (*select)(void* hndl, int mode, int on);
     // comm parameter
     int (*get_com_state)(void* hndl, uart_com_state_t* state);
     int (*set_com_state)(void* hndl, uart_com_state_t* state);
@@ -58,6 +69,7 @@ typedef struct {
     { .close = UART_API_NAME(pfx, close),				\
       .read = UART_API_NAME(pfx, read),				\
       .write = UART_API_NAME(pfx, write),				\
+      .select = UART_API_NAME(pfx, select),				\
       .get_com_state = UART_API_NAME(pfx, get_com_state),		\
       .set_com_state = UART_API_NAME(pfx, set_com_state),		\
       .get_modem_state = UART_API_NAME(pfx, get_modem_state),		\
@@ -72,6 +84,7 @@ typedef struct {
 static int UART_API_NAME(pfx,close)(void* hndl);  \
 static int UART_API_NAME(pfx,read)(void* hndl, void* buf, size_t nbytes);  \
 static int UART_API_NAME(pfx,write)(void* hndl, void* buf, size_t nbytes);  \
+static int UART_API_NAME(pfx,select)(void* hndl, int mode, int on); \
 static int UART_API_NAME(pfx,get_com_state)(void* hndl, uart_com_state_t* state);  \
 static int UART_API_NAME(pfx,set_com_state)(void* hndl, uart_com_state_t* state);  \
 static int UART_API_NAME(pfx,send_break)(void* hndl, int duration);  \
@@ -89,20 +102,23 @@ typedef struct {
     void*        data;
 } uart_handle_t;
 
-extern int uart_unix_open(uart_handle_t* hndl, char* devicename);
-extern int uart_win_open(uart_handle_t* hndl, char* devicename);
-extern int uart_ftdi_open(uart_handle_t* hndl, char* devicename);
+extern int uart_unix_open(ErlDrvPort port,uart_handle_t* hndl,char* devicename);
+extern int uart_win_open(ErlDrvPort port,uart_handle_t* hndl, char* devicename);
+extern int uart_ftdi_open(ErlDrvPort port,uart_handle_t* hndl,char* devicename);
 
 static inline void uart_init(uart_handle_t* hndl)
 {
-    hndl->api = 0;
+    hndl->api   = 0;
     hndl->flags = 0;
-    hndl->data  = (void*)((long)-1);
+    hndl->data  = NULL;
 }
 
 static inline int uart_close(uart_handle_t* hndl)
 {
-    return (hndl->api->close)(hndl->data);
+    int r;
+    r = (hndl->api->close)(hndl->data);
+    hndl->data = NULL;
+    return r;
 }
 
 static inline int uart_read(uart_handle_t* hndl, void* buf, size_t nbytes)
@@ -113,6 +129,11 @@ static inline int uart_read(uart_handle_t* hndl, void* buf, size_t nbytes)
 static inline int uart_write(uart_handle_t* hndl, void* buf, size_t nbytes)
 {
     return (hndl->api->write)(hndl->data,buf,nbytes);
+}
+
+static inline int uart_select(uart_handle_t* hndl, int mode, int on)
+{
+    return (hndl->api->select)(hndl->data,mode,on);
 }
 
 static inline int uart_get_com_state(uart_handle_t* hndl, uart_com_state_t* state)
