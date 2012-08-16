@@ -29,7 +29,7 @@
 #include <util.h>
 #define HAVE_PTY
 #else
-#include <pth.h>
+#include <pty.h>
 #define HAVE_PTY
 #endif
 
@@ -284,7 +284,7 @@ static int get_com_state(int fd, uart_com_state_t* com)
 #if defined(CCAR_OFLOW)
     if (tio.c_iflag & CCAR_OFLOW) com->oflow |= UART_CD;
 #elif defined(CRTSCTS)
-    if (tio.c_iflags & CRTSCTS) {
+    if (tio.c_iflag & CRTSCTS) {
 	com->oflow |= UART_CD;
 	com->iflow |= UART_RTS;
     }
