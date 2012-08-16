@@ -1,13 +1,10 @@
 //
-// Implements message formating and sending to either
-// the PORT by reply a formatted message to PORT queue OR
-// the CALLER by using driver_send_term direcly (SMP only)
+// Implements message formating and sending
 //
 
 #include <ctype.h>
 
 #include "uart_drv.h"
-
 
 static ErlDrvTermData error_atom(int err)
 {

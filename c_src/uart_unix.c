@@ -696,8 +696,6 @@ int uart_recv_closed(uart_ctx_t* ctx)
 	    // stop_read_device(ctx);
 	}
 	uart_async_error(ctx, ctx->dport, ctx->caller, am_closed);
-	// async_error_am_all(ctx, am_closed);
-	/* next time EXBADSEQ will be delivered  */
 	DEBUGF("uart_recv_closed(%ld): passive reply all 'closed'",
 	       (long) ctx->port);
     }
@@ -1078,6 +1076,7 @@ again:
 	    set_timeout(&ctx, tm);
 	    DEBUGF("recv timeout %lu", tm);
 	    process_input(&ctx, self, len);
+	    dmessage_free(mp);
 	    goto again_tmo;
 	}
 
@@ -1113,15 +1112,21 @@ again:
 	}
 
 	case UART_CMD_GETOPTS: {
+	    dterm_mark_t m1;
+	    dterm_mark_t m2;
 	    // {Ref, {ok,List}} || {Ref, {error,Reason}}
-	    dterm_put2(&term, ERL_DRV_UINT, mp_ref);
-	    dterm_put2(&term, ERL_DRV_ATOM, am_ok);
-	    if (uart_get_opts(&term, &ctx,(uint8_t*)mp->buffer,mp->used) < 0) {
-		dterm_reset(&term);
-		goto badarg;
+	    dterm_tuple_begin(&term, &m1); {
+		dterm_uint(&term, mp_ref);
+		dterm_tuple_begin(&term, &m2); {
+		    dterm_atom(&term, am_ok);
+		    if (uart_get_opts(&term, &ctx,(uint8_t*)mp->buffer,mp->used) < 0) {
+			dterm_reset(&term);
+			goto badarg;
+		    }
+		}
+		dterm_tuple_end(&term, &m2);
 	    }
-	    dterm_put2(&term, ERL_DRV_TUPLE, 2);
-	    dterm_put2(&term, ERL_DRV_TUPLE, 2);
+	    dterm_tuple_end(&term, &m1);
 	    dthread_port_send_dterm(mp_source, self, mp_from, &term);
 	    dterm_reset(&term);
 	    dmessage_free(mp);
@@ -1129,14 +1134,21 @@ again:
 	}
 
 	case UART_CMD_GET_MODEM: {
+	    dterm_mark_t m1;
+	    dterm_mark_t m2;
 	    uart_modem_state_t mstate;
 	    if (ctx.fd < 0) goto ebadf;
 	    if (get_modem_state(ctx.fd, &mstate) < 0) goto error;
-	    dterm_put2(&term, ERL_DRV_UINT, mp->ref);
-	    dterm_put2(&term, ERL_DRV_ATOM, am_ok);
-	    modem_state_dterm(&term, mstate);
-	    dterm_put2(&term, ERL_DRV_TUPLE, 2);
-	    dterm_put2(&term, ERL_DRV_TUPLE, 2);
+
+	    dterm_tuple_begin(&term, &m1); {
+		dterm_uint(&term, mp_ref);
+		dterm_tuple_begin(&term, &m2); {
+		    dterm_atom(&term, am_ok);
+		    modem_state_dterm(&term, mstate);
+		}
+		dterm_tuple_end(&term, &m2);
+	    }
+	    dterm_tuple_end(&term, &m1);
 	    dthread_port_send_dterm(mp_source, self, mp_from, &term);
 	    dterm_reset(&term);
 	    dmessage_free(mp);

@@ -334,7 +334,7 @@ static void uart_drv_ready_input(ErlDrvData d, ErlDrvEvent e)
 	DEBUGF("uart_drv: ready_input handle=%d", 
 	       DTHREAD_EVENT(ctx->self.iq_signal[0]));
 
-	if (!(mp = dthread_recv(&ctx->self, NULL))) {
+	if ((mp = dthread_recv(&ctx->self, NULL)) == NULL) {
 	    DEBUGF("uart_drv: ready_input signaled with no event! handle=%d",
 		   DTHREAD_EVENT(ctx->self.iq_signal[0]));
 	    return;
@@ -343,11 +343,14 @@ static void uart_drv_ready_input(ErlDrvData d, ErlDrvEvent e)
 	switch(mp->cmd) {
 	case DTHREAD_OUTPUT_TERM:
 	    DEBUGF("uart_drv: ready_input (OUTPUT_TERM)");
-	    driver_output_term(ctx->self.port, (ErlDrvTermData*) mp->buffer,
+	    driver_output_term(ctx->self.port, 
+			       (ErlDrvTermData*) mp->buffer,
 			       mp->used / sizeof(ErlDrvTermData));
 	    break;
 	case DTHREAD_SEND_TERM:
 	    DEBUGF("uart_drv: ready_input (SEND_TERM)");
+	    // dterm_dump(stderr, (ErlDrvTermData*) mp->buffer,
+	    //   mp->used / sizeof(ErlDrvTermData));
 	    driver_send_term(ctx->self.port, mp->to, /* orignal from ! */
 			     (ErlDrvTermData*) mp->buffer,
 			     mp->used / sizeof(ErlDrvTermData)); 
