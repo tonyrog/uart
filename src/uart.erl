@@ -1,16 +1,18 @@
 %%% @author Tony Rogvall <tony@rogvall.se>
 %%% @copyright (C) 2012, Tony Rogvall
 %%% @doc
-%%%    interface to the uart devices
+%%%    interface to uart devices
 %%% @end
 %%% Created : 29 Jan 2012 by Tony Rogvall <tony@rogvall.se>
 
 -module(uart).
 
 -export([open/2, close/1]).
--export([send/2]).
--export([recv/2, recv/3, unrecv/2]).
--export([break/2, xon/1, xoff/1]).
+-export([send/2, send_char/2]).
+-export([recv/2, recv/3]).
+-export([async_recv/2, async_recv/3, async_send/2]).
+-export([unrecv/2]).
+-export([break/2, hangup/1, flow/2]).
 -export([get_modem/1, set_modem/2, clear_modem/2]).
 -export([options/0]).
 -export([setopt/3, setopts/2]).
@@ -18,12 +20,11 @@
 
 -compile(export_all).  %% testing
 
+
 -define(UART_CMD_OPEN,      1).
--define(UART_CMD_CONNECT,   2).
--define(UART_CMD_DISCONNECT,3).
+-define(UART_CMD_HANGUP,    2).
 -define(UART_CMD_CLOSE,     4).
--define(UART_CMD_XON,       5).
--define(UART_CMD_XOFF,      6).
+-define(UART_CMD_FLOW,      5).
 -define(UART_CMD_BREAK,     7).
 -define(UART_CMD_SETOPTS,   8).
 -define(UART_CMD_GETOPTS,   9).
@@ -44,12 +45,11 @@
 -define(UART_OPT_BUFTM, 6).
 -define(UART_OPT_STOPB,  7).
 -define(UART_OPT_PARITY, 8).
--define(UART_OPT_HWFLOW, 9).
--define(UART_OPT_SWFLOW, 10).
+-define(UART_OPT_IFLOW, 9).
+-define(UART_OPT_OFLOW, 10).
 -define(UART_OPT_XOFFCHAR, 11).
 -define(UART_OPT_XONCHAR,  12).
 -define(UART_OPT_EOLCHAR,  13).
--define(UART_OPT_EOL2CHAR, 14).
 -define(UART_OPT_ACTIVE,   15).
 -define(UART_OPT_DELAY_SEND, 16).
 -define(UART_OPT_DELIVER, 17).
@@ -62,7 +62,6 @@
 -define(UART_OPT_SENDTMO, 25).  %% send timeout
 -define(UART_OPT_CLOSETMO, 26).  %% send close timeout
 -define(UART_OPT_BUFFER,   27).
--define(UART_OPT_BIT8,      28).
 -define(UART_OPT_EXITF,     29).
 
 -define(UART_PB_LITTLE_ENDIAN, 16#00008000). %% UART_PB_<n> 
@@ -72,17 +71,7 @@
 
 -define(UART_PB_RAW,       0).
 -define(UART_PB_N,         1).
--define(UART_PB_ASN1,      2).
--define(UART_PB_RM,        3).
--define(UART_PB_CDR,       4).
--define(UART_PB_FCGI,      5).
--define(UART_PB_LINE_LF,   6).
--define(UART_PB_TPKT,      7).
--define(UART_PB_HTTP,      8).
--define(UART_PB_HTTPH,     9).
--define(UART_PB_SSL_TLS,   10).
--define(UART_PB_HTTP_BIN,  11).
--define(UART_PB_HTTPH_BIN, 12).
+-define(UART_PB_LINE_LF,   2).
 
 -define(UART_PASSIVE, 0).
 -define(UART_ACTIVE,  1).
@@ -103,20 +92,31 @@
 -define(UART_ERROR,   1).
 -define(UART_OPTIONS, 2).
 
--define(UART_MODEM_DTR,  16#0002).
--define(UART_MODEM_RTS,  16#0004).
--define(UART_MODEM_CTS,  16#0008).
--define(UART_MODEM_DCD,  16#0010).
--define(UART_MODEM_RI,   16#0020).
--define(UART_MODEM_DSR,  16#0040).
-
--define(UART_BIT8_CLEAR, 0).
--define(UART_BIT8_SET,   1).
--define(UART_BIT8_ON,    2).
--define(UART_BIT8_OFF,   3).
-
+-define(UART_DTR,  16#0002).
+-define(UART_RTS,  16#0004).
+-define(UART_CTS,  16#0008).
+-define(UART_CD,   16#0010).
+-define(UART_RI,   16#0020).
+-define(UART_DSR,  16#0040).
+-define(UART_SW,   16#8000).
 
 -define(bool(X), if (X) -> 1; true -> 0 end).
+-define(is_uart(P),  is_port((P))).
+-define(is_byte(X),  (((X) band (bnot 255)) =:= 0)).
+
+-type uart() :: port().
+
+-type uart_option() :: 
+	device | baud | ibaud | obaud | csize | bufsz |
+	buftm | stopb | parity | iflow | oflow | xonchar |
+	xoffchar | eolchar | active | delay_send |
+	header | packet | packet_size | deliver | mode |
+	high_watermark | low_watermark | send_timeout |
+	send_timeout_close | buffer | exit_on_close.
+
+-type uart_input_pins()  ::  cts | dcd | ri | dcr.
+-type uart_output_pins() ::  dtr | rts.
+-type uart_modem_pins() :: uart_input_pins() | uart_output_pins().
 
 options() ->
     [
@@ -129,12 +129,11 @@ options() ->
      buftm,           %% timer()  [{packet,0}]
      stopb,           %% 1,2,3
      parity,          %% none,odd,even,mark
-     hwflow,          %% boolean()
-     swflow,          %% boolean()
+     iflow,           %% [sw,rts,dtr]
+     oflow,           %% [sw,cts,dsr,dcd]
      xonchar,         %% byte()
      xoffchar,        %% byte()
      eolchar,         %% byter()
-     eol2char,        %% byte()
      active,          %% true,false,once
      delay_send,      %% boolean()
      header,          %% unsigned()
@@ -147,53 +146,36 @@ options() ->
      send_timeout,
      send_timeout_close,
      buffer,
-     bit8,
      exit_on_close
     ].
 
-
-getopt(P, baud) ->
-    getopt(P, ibaud);
-getopt(P, Opt) ->
-    Arg = <<(encode_opt(Opt))>>,
-    Reply = erlang:port_control(P, ?UART_CMD_GETOPTS, Arg),
-    case decode(Reply) of
-	{ok,[{_,Value}]} -> {ok,Value};
-	Error -> Error
-    end.
-
-getopts(P, Opts) when is_list(Opts) ->
-    Opts1 = translate_getopts(Opts),
-    Data = << <<(encode_opt(Opt))>> || Opt <- Opts1 >>,
-    Reply = erlang:port_control(P, ?UART_CMD_GETOPTS, Data),
-    case decode(Reply) of
-	{ok, Values} ->
-	    {ok, translate_getopts_reply(Opts,Values)};
-	Error ->
-	    Error
-    end.
-
-setopt(P, Opt, Value) ->
-    setopts(P, [{Opt,Value}]).
-
-setopts(P, Opts) ->
-    Opts1 = translate_set_opts(Opts),
-    Data = << <<(encode_opt(Opt,Value))/binary>> || {Opt,Value} <- Opts1 >>,
-    Reply = erlang:port_control(P, ?UART_CMD_SETOPTS, Data),
-    decode(Reply).
+%%--------------------------------------------------------------------
+%% @doc
+%%   Open a serial device.
+%% @end
+%%--------------------------------------------------------------------
+-spec open(DeviceName::iolist(), Options::[{uart_option(),term()}]) ->
+		  {ok,uart()} | {error,term()}.
 
 open(DeviceName, Opts) ->
     Path = code:priv_dir(uart),
+    {Type,_} = os:type(),
     Driver = "uart_drv",
     case erl_ddll:load(Path, Driver) of
 	ok ->
-	    Port = erlang:open_port({spawn_driver, Driver}, [binary]),
-	    Opts1 = [{ibaud,9600},{device,DeviceName} | Opts],
-	    case setopts(Port, Opts1) of
+	    Command =
+		case proplists:get_bool(ftdi, Opts) of
+		    true -> Driver ++ " ftdi";
+		    false -> Driver ++ " " ++ atom_to_list(Type)
+		end,
+	    Opts1 = proplists:delete(ftdi, Opts),
+	    Uart = erlang:open_port({spawn_driver, Command}, [binary]),
+	    Opts2 = [{ibaud,9600},{device,DeviceName} | Opts1],
+	    case setopts(Uart, Opts2) of
 		ok ->
-		    {ok,Port};
+		    {ok,Uart};
 		Error ->
-		    erlang:port_close(Port),
+		    erlang:port_close(Uart),
 		    Error
 	    end;
 
@@ -202,80 +184,307 @@ open(DeviceName, Opts) ->
 	    Err
     end.
 
-close(Port) ->
-    erlang:port_close(Port).
+%%--------------------------------------------------------------------
+%% @doc
+%%   Close a serial device.
+%% @end
+%%--------------------------------------------------------------------
 
-break(Port,Duration) when is_port(Port),
-			  is_integer(Duration), Duration > 0 ->
-    Reply = erlang:port_control(Port, ?UART_CMD_BREAK, <<Duration:32>>),
-    decode(Reply).
+-spec close(Uart::uart()) -> ok | {error,term()}.
 
-xon(Port) when is_port(Port) ->
-    Reply = erlang:port_control(Port, ?UART_CMD_XON, []),
-    decode(Reply).
+close(Uart) when ?is_uart(Uart) ->
+    erlang:port_close(Uart).
 
-xoff(Port) when is_port(Port) ->
-    Reply = erlang:port_control(Port, ?UART_CMD_XOFF, []),
-    decode(Reply).
-
-get_modem(Port) ->
-    Reply = erlang:port_control(Port, ?UART_CMD_GET_MODEM, []),
-    case decode(Reply) of
-	{ok,Flags} -> {ok,decode_flags(Flags)};
+%%--------------------------------------------------------------------
+%% @doc
+%%   Get single option value.
+%% @end
+%%--------------------------------------------------------------------
+-spec getopt(Uart::uart(), Option::uart_option()) ->
+		    {ok,term()} | {error,term()}.
+    
+getopt(Uart, baud) ->
+    getopt(Uart, ibaud);
+getopt(Uart, Opt) ->
+    case command(Uart, ?UART_CMD_GETOPTS, <<(encode_opt(Opt))>>) of
+	{ok,[{_,Value}]} -> {ok,Value};
 	Error -> Error
     end.
 
-set_modem(Port, Fs) when is_list(Fs) ->
-    Flags = encode_flags(Fs),
-    Reply = erlang:port_control(Port, ?UART_CMD_SET_MODEM, <<Flags:32>>),
-    decode(Reply).
+%%--------------------------------------------------------------------
+%% @doc
+%%   Get multiple option values.
+%% @end
+%%--------------------------------------------------------------------
 
-clear_modem(Port, Fs) when is_list(Fs) ->
-    Flags = encode_flags(Fs),
-    Reply = erlang:port_control(Port, ?UART_CMD_CLR_MODEM, <<Flags:32>>),
-    decode(Reply).
+-spec getopts(Uart::uart(), Option::[uart_option()]) ->
+		     {ok,[{uart_option(),term()}]} | {error,term()}.
 
-send(Port, [C]) when is_port(Port), is_integer(C), C >= 0, C =< 255 ->
-    Reply = erlang:port_control(Port, ?UART_CMD_SENDCHAR, [C]),
-    decode(Reply);
+getopts(Uart, Opts) when ?is_uart(Uart), is_list(Opts) ->
+    Opts1 = translate_getopts(Opts),
+    Data = << <<(encode_opt(Opt))>> || Opt <- Opts1 >>,
+    case command(Uart, ?UART_CMD_GETOPTS, Data) of
+	{ok, Values} ->
+	    io:format("Options returned = ~p\n", [Values]),
+	    {ok, translate_getopts_reply(Opts,Values)};
+	Error ->
+	    Error
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc
+%%   Set single option.
+%% @end
+%%--------------------------------------------------------------------
+-spec setopt(Uart::uart(), Option::uart_option(), Value::term()) ->
+		    ok | {error,term()}.
+
+setopt(Uart, Opt, Value) ->
+    setopts(Uart, [{Opt,Value}]).
+
+%%--------------------------------------------------------------------
+%% @doc
+%%   Set multiple options.
+%% @end
+%%--------------------------------------------------------------------
+-spec setopts(Uart::uart(), Options::[{uart_option(),term()}]) ->
+		     ok | {error,term()}.
+
+setopts(Uart, Opts) when ?is_uart(Uart), is_list(Opts) ->
+    Opts1 = translate_set_opts(Opts),
+    Data = << <<(encode_opt(Opt,Value))/binary>> || {Opt,Value} <- Opts1 >>,
+    command(Uart, ?UART_CMD_SETOPTS, Data).
+
+%%--------------------------------------------------------------------
+%% @doc
+%%   Send break for Duration number of milliseconds .
+%% @end
+%%--------------------------------------------------------------------
+-spec break(Uart::uart(), Duration::non_neg_integer()) ->
+		   ok | {error,term()}.
+break(Uart,Duration) when ?is_uart(Uart),
+			  is_integer(Duration), Duration > 0 ->
+    command(Uart, ?UART_CMD_BREAK, <<Duration:32>>).
+
+%%--------------------------------------------------------------------
+%% @doc
+%%   Hangup
+%% @end
+%%--------------------------------------------------------------------
+-spec hangup(Uart::uart()) ->
+		   ok | {error,term()}.
+hangup(Uart) when ?is_uart(Uart) ->
+    command(Uart, ?UART_CMD_HANGUP, []).
+
+%%--------------------------------------------------------------------
+%% @doc
+%%   Manage input and output flow control 
+%% @end
+%%--------------------------------------------------------------------
+-spec flow(Uart::uart(), Mode::(input_off|input_on|output_off|output_on)) ->
+		 ok | {error,term()}.
+
+flow(Uart, input_off) when ?is_uart(Uart) ->
+    command(Uart, ?UART_CMD_FLOW, [0]);
+flow(Uart, input_on) when ?is_uart(Uart) ->
+    command(Uart, ?UART_CMD_FLOW, [1]);
+flow(Uart, output_off) when ?is_uart(Uart) ->
+    command(Uart, ?UART_CMD_FLOW, [2]);
+flow(Uart, output_on) when ?is_uart(Uart) ->
+    command(Uart, ?UART_CMD_FLOW, [3]).
+
+%%--------------------------------------------------------------------
+%% @doc
+%%   Get modem pins status.
+%% @end
+%%--------------------------------------------------------------------
+-spec get_modem(Uart::uart()) ->
+		       {ok, [uart_modem_pins()]} |
+		       {error, term()}.
+
+get_modem(Uart) ->
+    command(Uart, ?UART_CMD_GET_MODEM, []).
+
+%%--------------------------------------------------------------------
+%% @doc
+%%   Set modem pins.
+%% @end
+%%--------------------------------------------------------------------
+
+-spec set_modem(Uart::uart(), Flags::[uart_modem_pins()]) ->
+		       ok | {error, term()}.
+
+set_modem(Uart, Fs) when is_list(Fs) ->
+    Flags = encode_flags(Fs),
+    command(Uart, ?UART_CMD_SET_MODEM, <<Flags:32>>).
+
+%%--------------------------------------------------------------------
+%% @doc
+%%   Clear modem pins.
+%% @end
+%%--------------------------------------------------------------------
+
+-spec clear_modem(Uart::uart(), Flags::[uart_modem_pins()]) ->
+			 ok | {error, term()}.
+clear_modem(Uart, Fs) when ?is_uart(Uart), is_list(Fs) ->
+    Flags = encode_flags(Fs),
+    command(Uart, ?UART_CMD_CLR_MODEM, <<Flags:32>>).
+
+%%--------------------------------------------------------------------
+%% @doc
+%%   Send characters
+%% @end
+%%--------------------------------------------------------------------
+
+-spec send(Uart::uart(), Data::iolist()) ->
+		  ok | {error, term()}.
+
+send(Port, [C]) when is_port(Port), ?is_byte(C) ->
+    command(Port, ?UART_CMD_SENDCHAR, [C]);
 send(Port, <<C>>) when is_port(Port) ->
-    Reply = erlang:port_control(Port, ?UART_CMD_SENDCHAR, [C]),
-    decode(Reply);
+    command(Port, ?UART_CMD_SENDCHAR, [C]);
 send(Port, Data) when is_port(Port),is_list(Data) ->
-    true = erlang:port_command(Port, Data),
-    ok;
+    command(Port, ?UART_CMD_SEND, Data);
 send(Port, Data) when is_port(Port), is_binary(Data) ->
+    command(Port, ?UART_CMD_SEND, Data).
+
+%%--------------------------------------------------------------------
+%% @doc
+%%   Send a single character
+%% @end
+%%--------------------------------------------------------------------
+-spec send_char(Uart::uart(), C::byte()) ->
+		       ok | {error, term()}.
+
+send_char(Port, C) when ?is_uart(Port), ?is_byte(C) ->
+    command(Port, ?UART_CMD_SENDCHAR, [C]).
+
+%%--------------------------------------------------------------------
+%% @doc
+%%   Send asynchronous data 
+%% @end
+%%--------------------------------------------------------------------
+-spec async_send(Uart::uart(), Data::iolist()) -> ok.
+
+async_send(Port, Data) ->
     true = erlang:port_command(Port, Data),
     ok.
 
+%%--------------------------------------------------------------------
+%% @doc
+%%   Push back data onto the receice buffer
+%% @end
+%%--------------------------------------------------------------------
+-spec unrecv(Uart::uart(), Data::iolist()) ->
+		    ok | {error,term()}.
+
 unrecv(Port, Data) when is_list(Data); is_binary(Data)  ->
-    Res = erlang:port_control(Port, ?UART_CMD_UNRECV, Data),
-    decode(Res).
+    command(Port, ?UART_CMD_UNRECV, Data).
+
+%%--------------------------------------------------------------------
+%% @doc
+%%   Receive data from a device in passive mode
+%% @end
+%%--------------------------------------------------------------------    
+-spec recv(Uart::uart(), Length::non_neg_integer()) ->
+		  {ok,iolist()} | {error, term()}.
     
-
 recv(Port, Length) ->
-    recv0(Port, Length, -1).
+    recv_(Port, Length, -1).
 
-recv(Port, Length, infinity) ->
-    recv0(Port, Length,-1);
+-spec recv(Uart::uart(), Length::non_neg_integer(), Timeout::timeout()) ->
+		  {ok,iolist()} | {error, term()}.
 
-recv(Port, Length, Time) when is_integer(Time) ->
-    recv0(Port, Length, Time).
+recv(Uart, Length, infinity) ->
+    recv_(Uart, Length, -1);
 
-recv0(Port, Length, Time) when is_port(Port), is_integer(Length), Length >= 0 ->
-    case async_recv(Port, Length, Time) of
+recv(Uart, Length, Timeout) when is_integer(Timeout) ->
+    recv_(Uart, Length, Timeout).
+
+recv_(Uart, Length, Timeout) when 
+      ?is_uart(Uart),
+      is_integer(Length), Length >= 0 ->
+    case async_recv(Uart, Length, Timeout) of
 	{ok, Ref} ->
 	    receive
-		{uart_async, Port, Ref, Status} -> Status;
-		{'EXIT', Port, _Reason} ->
+		{uart_async, Uart, Ref, Data} when is_list(Data) ->
+		    {ok,Data};
+		{uart_async, Uart, Ref, Data} when is_binary(Data) ->
+		    {ok,Data};
+		{uart_async, Uart, Ref, Other} ->
+		    Other;
+		{'EXIT', Uart, _Reason} ->
 		    {error, closed}
 	    end;
 	Error -> Error
     end.
-	     
-async_recv(Port, Length, Time) ->
-    Res = erlang:port_control(Port, ?UART_CMD_RECV, [<<Time:32,Length:32>>]),
-    decode(Res).
+
+%%--------------------------------------------------------------------
+%% @doc
+%%   Initiate an async receive operation.
+%% @end
+
+-spec async_recv(Uart::uart(), Length::non_neg_integer()) ->
+			{ok,integer()} | {error,term()}.
+
+async_recv(Uart, Length) ->
+    async_recv(Uart, Length, -1).
+
+%%--------------------------------------------------------------------
+%% @doc
+%%   Initiate an async receive operation.
+%%   To initiate an async operation reading a certain length and with
+%%   a timeout the async_recv can be useful.
+%%   ```{ok,Ref} = uart:async_recv(Uart, 16, 1000),
+%%      receive 
+%%        {uart_async,Uart,Ref,{ok,Data}} -> {ok,Data};
+%%        {uart_async,Uart,Ref,{error,Reason}} -> {error,Reason};
+%%        {'EXIT',Uart,_Reason} -> {error,closed}
+%%        ...
+%%      end'''
+%%   The above can also be achived by using active once and 
+%%   a fixed packet mode.
+%%   ```uart:setopts(Uart, [{packet,{size,16}},{active,once}]),
+%%      receive
+%%         {uart,Uart,Data} -> {ok,Data};
+%%         {uart_error,Uart,enxio} -> {error,usb_device_pulled_out};
+%%         {uart_error,Uart,Err} -> {error,Err};
+%%         {uart_closed,Uart} -> {error,close}
+%%      after Timeout ->
+%&         {error,timeout}
+%%      end'''
+%%   Packet size are however limited (to 16 bits), so any size
+%%   above 64K must be handled with async_recv or split into
+%%   chunks.
+%% @end
+%%--------------------------------------------------------------------    
+    
+-spec async_recv(Uart::uart(), Length::non_neg_integer(), Timeout::timeout()) ->
+			{ok,integer()} | {error,term()}.
+
+async_recv(Uart, Length, Time) ->
+    command_(Uart, ?UART_CMD_RECV, [<<Time:32,Length:32>>]).
+
+
+command(Uart, Cmd, Args) ->
+    case command_(Uart,Cmd,Args) of
+	{ok,Ref} ->
+	    receive
+		{Ref, Result} ->
+		    Result
+	    end;
+	Error -> Error
+    end.
+
+command_(Uart, Cmd, Args) ->
+    case erlang:port_control(Uart, Cmd, Args) of
+	<<?UART_OK,Ref:32>> ->
+	    {ok, Ref};
+	<<?UART_ERROR>> ->
+	    {error, unknown};
+	<<?UART_ERROR,Reason/binary>> ->
+	    {error, binary_to_atom(Reason,latin1)}
+    end.
 
 translate_set_opts([{baud,B}|Opts]) ->
     [{ibaud,B},{obaud,B}|translate_set_opts(Opts)];
@@ -298,148 +507,6 @@ translate_getopts_reply([_Opt|Opts],[V|Vs]) ->
 translate_getopts_reply([],[]) ->
     [].
 
-
-decode(<<?UART_OK>>) ->
-    ok;
-decode(<<?UART_OK,V:8>>)  -> {ok,V};
-decode(<<?UART_OK,V:16>>) -> {ok,V};
-decode(<<?UART_OK,V:32>>) -> {ok,V};
-decode(<<?UART_ERROR>>) -> {error, unknown};
-decode(<<?UART_ERROR,Reason/binary>>) ->
-    {error, binary_to_atom(Reason,latin1)};
-decode(<<?UART_OPTIONS,Opts/binary>>) ->
-    {ok,decode_opts(Opts, [])}.
-
-decode_opts(<<>>, Acc) ->
-    lists:reverse(Acc);
-decode_opts(Binary, Acc) ->
-    {KeyVal,Tail} = decode_opt(Binary),
-    io:format("decode_opts: ~w\n", [KeyVal]),
-    decode_opts(Tail, [KeyVal|Acc]).
-
-
-decode_opt(<<?UART_OPT_DEVICE,L,Value:L/binary,Tail/binary>>) ->
-    {{device, binary_to_list(Value)}, Tail};
-decode_opt(<<?UART_OPT_IBAUD,Value:32, Tail/binary>>) ->
-    {{ibaud,Value},Tail};
-decode_opt(<<?UART_OPT_OBAUD,Value:32, Tail/binary>>) ->
-    {{obaud,Value},Tail};
-decode_opt(<<?UART_OPT_CSIZE,Value:32, Tail/binary>>) ->
-    {{csize,Value},Tail};
-decode_opt(<<?UART_OPT_BUFSZ,Value:32, Tail/binary>>) ->
-    {{bufsz,Value},Tail};
-decode_opt(<<?UART_OPT_BUFTM,Value:32, Tail/binary>>) ->
-    {{buftm,Value},Tail};
-decode_opt(<<?UART_OPT_STOPB,Value:32,Tail/binary>>) ->
-    {{stopb,Value},Tail};
-decode_opt(<<?UART_OPT_PARITY,Value:32,Tail/binary>>) ->
-    case Value of
-	?UART_PARITY_NONE -> {{parity,none},Tail};
-	?UART_PARITY_ODD -> {{parity,odd},Tail};
-	?UART_PARITY_EVEN -> {{parity,even},Tail};
-	?UART_PARITY_MARK -> {{parity,mark},Tail};
-	_ -> {{parity,Value}, Tail}
-    end;
-decode_opt(<<?UART_OPT_HWFLOW,Value:32,Tail/binary>>) ->
-    {{hwflow,(Value =/= 0)},Tail};
-decode_opt(<<?UART_OPT_SWFLOW,Value:32,Tail/binary>>) ->
-    {{swflow,(Value =/= 0)},Tail};
-decode_opt(<<?UART_OPT_XONCHAR,Value:32,Tail/binary>>) ->
-    {{xonchar,Value},Tail};
-decode_opt(<<?UART_OPT_XOFFCHAR,Value:32,Tail/binary>>) ->
-    {{xoffchar,Value},Tail};
-decode_opt(<<?UART_OPT_EOLCHAR,Value:32,Tail/binary>>) ->
-    {{eolchar,Value},Tail};
-decode_opt(<<?UART_OPT_EOL2CHAR,Value:32,Tail/binary>>) ->
-    {{eol2char,Value},Tail};
-decode_opt(<<?UART_OPT_ACTIVE,Value:32,Tail/binary>>) ->
-    case Value of
-	?UART_ACTIVE -> {{active,true}, Tail};
-	?UART_PASSIVE -> {{active,false}, Tail};
-	?UART_ONCE    -> {{active,once}, Tail};
-	_ -> {{active,Value},Tail}
-    end;
-decode_opt(<<?UART_OPT_DELAY_SEND,Value:32,Tail/binary>>) ->
-    {{delay_send,(Value =/= 0)},Tail};
-decode_opt(<<?UART_OPT_HEADER,Value:32,Tail/binary>>) ->
-    {{header,Value},Tail};
-decode_opt(<<?UART_OPT_PSIZE,Value:32,Tail/binary>>) ->
-    {{packet_size,Value},Tail};
-decode_opt(<<?UART_OPT_DELIVER,Value:32,Tail/binary>>) ->
-    case Value of
-	?UART_DELIVER_PORT -> {{deliver,port},Tail};
-	?UART_DELIVER_TERM -> {{deliver,term},Tail};
-	_ -> {{deliver,Value},Tail}
-    end;
-decode_opt(<<?UART_OPT_MODE,Value:32,Tail/binary>>) ->
-    case Value of
-	?UART_MODE_LIST   -> {{mode,list},Tail};
-	?UART_MODE_BINARY -> {{mode,binary},Tail};
-	_ -> {{mode,Value}, Tail}
-    end;
-decode_opt(<<?UART_OPT_PACKET,Value:32,Tail/binary>>) ->
-    case (Value band ?UART_PB_TYPE_MASK) of
-	?UART_PB_RAW ->
-	    case Value bsr 16 of
-		0 -> {{packet,0}, Tail};
-		N -> {{packet,{size,N}}, Tail}
-	    end;
-	?UART_PB_N ->
-	    case (Value band ?UART_PB_BYTES_MASK) bsr 8 of
-		N when N > 0, N =< 8 ->
-		    if (Value band ?UART_PB_LITTLE_ENDIAN) =/= 0 ->
-			    {{packet,-N}, Tail};
-		       true ->
-			    {{packet,N}, Tail}
-		    end;
-		true ->
-		    {{packet,{value,Value}},Tail}
-	    end;
-	?UART_PB_ASN1 -> {{packet,asn1},Tail};
-	?UART_PB_RM   -> {{packet,sunrm},Tail};
-	?UART_PB_CDR  -> {{packet,cdr}, Tail};
-	?UART_PB_FCGI -> {{packet,fcgi},Tail};
-	?UART_PB_LINE_LF -> {{packet,line},Tail};
-	?UART_PB_TPKT    -> {{packet,tpkt},Tail};
-	?UART_PB_HTTP    -> {{packet,http},Tail};
-	?UART_PB_HTTPH   -> {{packet,httph},Tail};
-	?UART_PB_SSL_TLS -> {{packet,ssl_tls},Tail};
-	?UART_PB_HTTP_BIN -> {{packet,http_bin},Tail};
-	?UART_PB_HTTPH_BIN -> {{packet,httph_bin},Tail};
-	_ ->
-	    {{packet,{value,Value}},Tail}
-    end;
-decode_opt(<<?UART_OPT_HIGH,Value:32,Tail/binary>>) ->
-    {{high_watermark,Value},Tail};
-decode_opt(<<?UART_OPT_LOW,Value:32,Tail/binary>>) ->
-    {{low_watermark,Value},Tail};
-decode_opt(<<?UART_OPT_SENDTMO,Value:32,Tail/binary>>) ->
-    if Value =:= 16#ffffffff -> 
-	    {{send_timeout,-1},Tail};
-       true ->
-	    {{send_timeout,Value},Tail}
-    end;
-decode_opt(<<?UART_OPT_CLOSETMO,Value:32,Tail/binary>>) ->
-    if Value =:= 16#ffffffff -> 
-	    {{send_timeout_close,-1},Tail};
-       true ->
-	    {{send_timeout_close,Value},Tail}
-    end;
-decode_opt(<<?UART_OPT_BUFFER,Value:32,Tail/binary>>) ->
-    {{buffer, Value}, Tail};
-decode_opt(<<?UART_OPT_BIT8,Value:32,Tail/binary>>) ->
-    case Value of 
-	0 -> {{bit8,clear},Tail};
-	1 -> {{bit8,set},Tail};
-	2 -> {{bit8,on},Tail};
-	3 -> {{bit8,off},Tail}
-    end;
-decode_opt(<<?UART_OPT_EXITF,Value:32,Tail/binary>>) ->
-    {{exit_on_close, Value =/= 0},Tail}.
-
-
-
-   
 %% @doc
 %%    Encode UART option
 %% @end
@@ -457,30 +524,9 @@ encode_opt(packet,{size,N}) when is_integer(N), N > 0, N =< 16#ffff ->
     <<?UART_OPT_PACKET, ((N bsl 16) + ?UART_PB_RAW):32>>;
 encode_opt(packet,raw) ->
     <<?UART_OPT_PACKET, ?UART_PB_RAW:32>>;
-encode_opt(packet,sunrm) ->
-    <<?UART_OPT_PACKET, ?UART_PB_RM:32>>;
-encode_opt(packet,asn1) ->
-    <<?UART_OPT_PACKET, ?UART_PB_ASN1:32>>;
-encode_opt(packet,cdr) ->
-    <<?UART_OPT_PACKET, ?UART_PB_CDR:32>>;
-encode_opt(packet,fcgi) ->
-    <<?UART_OPT_PACKET, ?UART_PB_FCGI:32>>;
 encode_opt(packet,line) ->
     <<?UART_OPT_PACKET, ?UART_PB_LINE_LF:32>>;
-encode_opt(packet,tpkt) ->
-    <<?UART_OPT_PACKET, ?UART_PB_TPKT:32>>;
-encode_opt(packet,http) ->
-    <<?UART_OPT_PACKET, ?UART_PB_HTTP:32>>;
-encode_opt(packet,httph) -> 
-    <<?UART_OPT_PACKET, ?UART_PB_HTTPH:32>>;
-encode_opt(packet,http_bin) -> 
-    <<?UART_OPT_PACKET, ?UART_PB_HTTP_BIN:32>>;
-encode_opt(packet,httph_bin) ->
-    <<?UART_OPT_PACKET, ?UART_PB_HTTPH_BIN:32>>;
-encode_opt(packet,ssl) ->
-    <<?UART_OPT_PACKET, ?UART_PB_SSL_TLS:32>>;
-encode_opt(packet,ssl_tls) ->
-    <<?UART_OPT_PACKET, ?UART_PB_SSL_TLS:32>>;
+
 
 encode_opt(device,Name) when is_list(Name); is_binary(Name) ->
     Bin = iolist_to_binary(Name),
@@ -506,18 +552,16 @@ encode_opt(parity,even) ->
     <<?UART_OPT_PARITY,?UART_PARITY_EVEN:32>>;
 encode_opt(parity,mark) ->
     <<?UART_OPT_PARITY,?UART_PARITY_MARK:32>>;
-encode_opt(hwflow,Value) when is_boolean(Value) ->
-    <<?UART_OPT_HWFLOW,?bool(Value):32>>;
-encode_opt(swflow,Value) when is_boolean(Value) ->
-    <<?UART_OPT_SWFLOW,?bool(Value):32>>;
+encode_opt(oflow,Value) when is_list(Value) ->
+    <<?UART_OPT_OFLOW,(encode_flags(Value)):32>>;
+encode_opt(iflow,Value) when is_list(Value) ->
+    <<?UART_OPT_IFLOW,(encode_flags(Value)):32>>;
 encode_opt(xonchar,Value) when Value >= 0, Value =< 255 ->
     <<?UART_OPT_XONCHAR,Value:32>>;
 encode_opt(xoffchar,Value) when Value >= 0, Value =< 255 ->
     <<?UART_OPT_XOFFCHAR,Value:32>>;
 encode_opt(eolchar,Value) when Value >= 0, Value =< 255 ->
     <<?UART_OPT_EOLCHAR,Value:32>>;
-encode_opt(eol2char,Value) when Value >= 0, Value =< 255 ->
-    <<?UART_OPT_EOL2CHAR,Value:32>>;
 encode_opt(active,true) ->   <<?UART_OPT_ACTIVE,?UART_ACTIVE:32>>;
 encode_opt(active,false) ->   <<?UART_OPT_ACTIVE,?UART_PASSIVE:32>>;
 encode_opt(active,once) ->   <<?UART_OPT_ACTIVE,?UART_ONCE:32>>;
@@ -548,30 +592,8 @@ encode_opt(packet,{size,N}) when is_integer(N), N > 0, N =< 16#ffff ->
     <<?UART_OPT_PACKET, ((N bsl 16) + ?UART_PB_RAW):32>>;
 encode_opt(packet,raw) ->
     <<?UART_OPT_PACKET, ?UART_PB_RAW:32>>;
-encode_opt(packet,sunrm) ->
-    <<?UART_OPT_PACKET, ?UART_PB_RM:32>>;
-encode_opt(packet,asn1) ->
-    <<?UART_OPT_PACKET, ?UART_PB_ASN1:32>>;
-encode_opt(packet,cdr) ->
-    <<?UART_OPT_PACKET, ?UART_PB_CDR:32>>;
-encode_opt(packet,fcgi) ->
-    <<?UART_OPT_PACKET, ?UART_PB_FCGI:32>>;
 encode_opt(packet,line) ->
     <<?UART_OPT_PACKET, ?UART_PB_LINE_LF:32>>;
-encode_opt(packet,tpkt) ->
-    <<?UART_OPT_PACKET, ?UART_PB_TPKT:32>>;
-encode_opt(packet,http) ->
-    <<?UART_OPT_PACKET, ?UART_PB_HTTP:32>>;
-encode_opt(packet,httph) -> 
-    <<?UART_OPT_PACKET, ?UART_PB_HTTPH:32>>;
-encode_opt(packet,http_bin) -> 
-    <<?UART_OPT_PACKET, ?UART_PB_HTTP_BIN:32>>;
-encode_opt(packet,httph_bin) ->
-    <<?UART_OPT_PACKET, ?UART_PB_HTTPH_BIN:32>>;
-encode_opt(packet,ssl) ->
-    <<?UART_OPT_PACKET, ?UART_PB_SSL_TLS:32>>;
-encode_opt(packet,ssl_tls) ->
-    <<?UART_OPT_PACKET, ?UART_PB_SSL_TLS:32>>;
 encode_opt(high_watermark,X) when is_integer(X), X >= 0, X =< 16#ffffffff ->
     <<?UART_OPT_HIGH, X:32>>;    
 encode_opt(low_watermark,X) when is_integer(X), X >= 0, X =< 16#ffffffff ->
@@ -582,17 +604,8 @@ encode_opt(send_timeout_close,X) when is_integer(X),X >= -1, X =< 16#7fffffff ->
     <<?UART_OPT_CLOSETMO, X:32>>;
 encode_opt(buffer, X) when is_integer(X), X >= 0, X =< 16#ffffffff ->
     <<?UART_OPT_BUFFER, X:32>>;    
-encode_opt(bit8, clear) ->
-    <<?UART_OPT_BIT8, ?UART_BIT8_CLEAR:32>>;
-encode_opt(bit8, set) ->
-    <<?UART_OPT_BIT8, ?UART_BIT8_SET:32>>;
-encode_opt(bit8, on) ->
-    <<?UART_OPT_BIT8, ?UART_BIT8_ON:32>>;
-encode_opt(bit8, off) ->
-    <<?UART_OPT_BIT8, ?UART_BIT8_OFF:32>>;
 encode_opt(exit_on_close, X) when is_boolean(X) ->
     <<?UART_OPT_EXITF,?bool(X):32>>.
-
 
 encode_opt(device) -> ?UART_OPT_DEVICE;
 encode_opt(ibaud)  -> ?UART_OPT_IBAUD;
@@ -602,12 +615,11 @@ encode_opt(bufsz) -> ?UART_OPT_BUFSZ;
 encode_opt(buftm) -> ?UART_OPT_BUFTM;
 encode_opt(stopb) -> ?UART_OPT_STOPB;
 encode_opt(parity) -> ?UART_OPT_PARITY;
-encode_opt(hwflow) -> ?UART_OPT_HWFLOW;
-encode_opt(swflow) -> ?UART_OPT_SWFLOW;
+encode_opt(iflow) -> ?UART_OPT_IFLOW;
+encode_opt(oflow) -> ?UART_OPT_OFLOW;
 encode_opt(xonchar) -> ?UART_OPT_XONCHAR;
 encode_opt(xoffchar) -> ?UART_OPT_XOFFCHAR;
 encode_opt(eolchar) ->  ?UART_OPT_EOLCHAR;
-encode_opt(eol2char) -> ?UART_OPT_EOL2CHAR;
 encode_opt(active) -> ?UART_OPT_ACTIVE;
 encode_opt(delay_send) -> ?UART_OPT_DELAY_SEND;
 encode_opt(header)     -> ?UART_OPT_HEADER;
@@ -620,7 +632,6 @@ encode_opt(low_watermark) -> ?UART_OPT_LOW;
 encode_opt(send_timeout) -> ?UART_OPT_SENDTMO;
 encode_opt(send_timeout_close) -> ?UART_OPT_CLOSETMO;
 encode_opt(buffer) -> ?UART_OPT_BUFFER;
-encode_opt(bit8) -> ?UART_OPT_BIT8;
 encode_opt(exit_on_close) -> ?UART_OPT_EXITF.
     
      
@@ -629,18 +640,19 @@ encode_flags([F|Fs]) ->
 encode_flags([]) ->
     0.
 
-encode_flag(dtr) -> ?UART_MODEM_DTR;
-encode_flag(rts) -> ?UART_MODEM_RTS;
-encode_flag(cts) -> ?UART_MODEM_CTS;
-encode_flag(dcd) -> ?UART_MODEM_DCD;
-encode_flag(ri)  -> ?UART_MODEM_RI;
-encode_flag(dsr) -> ?UART_MODEM_DSR.
+encode_flag(dtr) -> ?UART_DTR;
+encode_flag(rts) -> ?UART_RTS;
+encode_flag(cts) -> ?UART_CTS;
+encode_flag(cd)  -> ?UART_CD;
+encode_flag(ri)  -> ?UART_RI;
+encode_flag(dsr) -> ?UART_DSR;
+encode_flag(sw) ->  ?UART_SW.
 
 decode_flags(Flags) when is_integer(Flags) ->
-    if Flags band ?UART_MODEM_DTR =/= 0 -> [dtr]; true -> [] end ++
-    if Flags band ?UART_MODEM_RTS =/= 0 -> [rts]; true -> [] end ++
-    if Flags band ?UART_MODEM_CTS =/= 0 -> [cts]; true -> [] end ++
-    if Flags band ?UART_MODEM_DCD =/= 0 -> [dcd]; true -> [] end ++
-    if Flags band ?UART_MODEM_RI  =/= 0 -> [ri]; true -> [] end ++
-    if Flags band ?UART_MODEM_DSR =/= 0 -> [dsr]; true -> [] end.
-
+    if Flags band ?UART_DTR =/= 0 -> [dtr]; true -> [] end ++
+    if Flags band ?UART_RTS =/= 0 -> [rts]; true -> [] end ++
+    if Flags band ?UART_CTS =/= 0 -> [cts]; true -> [] end ++
+    if Flags band ?UART_CD =/= 0  -> [cd]; true -> [] end ++
+    if Flags band ?UART_RI  =/= 0 -> [ri]; true -> [] end ++
+    if Flags band ?UART_DSR =/= 0 -> [dsr]; true -> [] end ++
+    if Flags band ?UART_SW  =/= 0 -> [sw]; true -> [] end.

@@ -25,19 +25,26 @@ options() ->
 %%   {active,false|true|once} x {packet,-8...8}     = 3*17 = 51
 %%   {active,false|true|once} x {packet,{size,1|5}} = 3*2  = 6 
 %%   {active,false|true|once} x {packet,0|line}     = 3*2  = 6 
+%%   x
+%%   {mode,list|binary} = 2
+%%   
+%%  Sofar = 51*2+6*2+6*2 = 126
 %%
 %% TODO: 
-%%   {deliver, port}
-%%   {mode,binary}
-%%   {header, HSz}
+%%   {deliver, term|port}
+%%   {header,  0,1,2,3,4,7,12,13}
 %%
 run() ->
     encode_decode(),
     {ok,A} = open(a),
     {ok,B} = open(b),
-    transfer_test(A,B,false),
-    transfer_test(A,B,true),
-    transfer_test(A,B,once),
+    transfer_test(A,B,[{mode,list},{active,false}]),
+    transfer_test(A,B,[{mode,list},{active,true}]),
+    transfer_test(A,B,[{mode,list},{active,once}]),
+    transfer_test(A,B,[{mode,binary},{active,false}]),
+    transfer_test(A,B,[{mode,binary},{active,true}]),
+    transfer_test(A,B,[{mode,binary},{active,once}]),
+    %% modem_test(A, B),
     uart:close(A),
     uart:close(B),
     ok.
@@ -45,47 +52,89 @@ run() ->
 open(X) ->
     uart:open(tty(X), []).
 
-transfer_test(A,B,Active) ->
+transfer_test(A,B,Opts) ->
     Data = "Hello World",
     Len  = length(Data),
+    transfer_raw(A,B,Opts,Data,Len,0),
+    transfer_raw(A,B,Opts,Data,Len,1),
+    transfer_raw(A,B,Opts,Data,Len,2),
+    transfer_raw(A,B,Opts,Data,Len,3),
+    transfer_raw(A,B,Opts,Data,Len,4),
+    transfer_raw(A,B,Opts,Data,Len,5),
+    transfer_raw(A,B,Opts,Data,Len,6),
+    transfer_raw(A,B,Opts,Data,Len,7),
+    transfer_raw(A,B,Opts,Data,Len,8),
+    transfer_raw(A,B,Opts,Data,Len,-1),
+    transfer_raw(A,B,Opts,Data,Len,-2),
+    transfer_raw(A,B,Opts,Data,Len,-3),
+    transfer_raw(A,B,Opts,Data,Len,-4),
+    transfer_raw(A,B,Opts,Data,Len,-5),
+    transfer_raw(A,B,Opts,Data,Len,-6),
+    transfer_raw(A,B,Opts,Data,Len,-7),
+    transfer_raw(A,B,Opts,Data,Len,-8),
 
-    %% Formatting of sender packet + raw reception
-    lists:foreach(
-      fun(Sz) ->
-	      Hdr =
-		  if Sz =:= 0 -> [];
-		     Sz < 0 -> binary_to_list(<<Len:(-Sz*8)/little>>);
-		     true -> binary_to_list(<<Len:(Sz*8)>>)
-		  end,
-	      Match = Hdr ++ Data,
-	      transfer(A, [{packet,Sz}], Data, 
-		       B, [{active,Active},{packet,0}], Match)
-      end, lists:seq(-8,8)),
+    transfer_packet(A,B,Opts,Data,Len,0),
+    transfer_packet(A,B,Opts,Data,Len,1),
+    transfer_packet(A,B,Opts,Data,Len,2),
+    transfer_packet(A,B,Opts,Data,Len,3),
+    transfer_packet(A,B,Opts,Data,Len,4),
+    transfer_packet(A,B,Opts,Data,Len,5),
+    transfer_packet(A,B,Opts,Data,Len,6),
+    transfer_packet(A,B,Opts,Data,Len,7),
+    transfer_packet(A,B,Opts,Data,Len,8),
+    transfer_packet(A,B,Opts,Data,Len,-1),
+    transfer_packet(A,B,Opts,Data,Len,-2),
+    transfer_packet(A,B,Opts,Data,Len,-3),
+    transfer_packet(A,B,Opts,Data,Len,-4),
+    transfer_packet(A,B,Opts,Data,Len,-5),
+    transfer_packet(A,B,Opts,Data,Len,-6),
+    transfer_packet(A,B,Opts,Data,Len,-7),
+    transfer_packet(A,B,Opts,Data,Len,-8),
 
-    %% Packet reception
-    lists:foreach(
-      fun(Sz) ->
-	      transfer(A, [{packet,Sz}], Data, 
-		       B, [{active,Active},{packet,Sz}], Data)
-      end, lists:seq(-8,8)),
+    transfer_line_packet(A,B,Opts,Data,Len),
 
-
-    %% Line packet
-    transfer(A, [{packet,line}], Data++"\n", 
-	     B, [{active,Active},{packet,0}], Data++"\n"),
-    transfer(A, [{packet,line}], Data++"\n", 
-	     B, [{active,Active},{packet,line}], Data++"\n"),
-
-    %% Fixed size packet
-    transfer(A, [{packet,0}], "Hello", 
-	     B, [{active,Active},{packet,{size,5}}], "Hello"),
-    transfer(A, [{packet,0}], "W", 
-	     B, [{active,Active},{packet,{size,1}}], "W"),
+    transfer_fixed_packet(A,B,Opts,Data,Len),
     ok.
 
+transfer_raw(A,B,MatchOpts,Data,Len,Sz) ->
+    %% Formatting of sender packet + raw reception
+    Hdr =
+	if Sz =:= 0 -> [];
+	   Sz < 0 -> binary_to_list(<<Len:(-Sz*8)/little>>);
+	   true -> binary_to_list(<<Len:(Sz*8)>>)
+	end,
+    Match = Hdr++Data,
+    transfer(A, [{packet,Sz}], Data, 
+	     B, MatchOpts++[{packet,0}], Match).
 
-transfer(A, AOpts, Data, B, BOpts, Match) ->
-    io:format("Transfer: A=~w, Data=~p, B=~w, Match=~p\n",
+transfer_packet(A,B,MatchOpts,Data,_Len,Sz) ->
+    %% Packet reception
+    transfer(A, [{packet,Sz}], Data, 
+	     B, MatchOpts++[{packet,Sz}], Data).
+
+
+transfer_line_packet(A,B,MatchOpts,Data,_Len) ->
+    %% Line packet
+    transfer(A, [{packet,line}], Data++"\n", 
+	     B, MatchOpts++[{packet,0}], Data++"\n"),
+    transfer(A, [{packet,line}], Data++"\n", 
+	     B, MatchOpts++[{packet,line}], Data++"\n").
+
+transfer_fixed_packet(A,B,MatchOpts,Data,Len) ->
+    %% Fixed size packet
+    transfer(A, [{packet,0}], Data, 
+	     B, MatchOpts++[{packet,{size,Len}}], Data),
+    transfer(A, [{packet,0}], "W", 
+	     B, MatchOpts++[{packet,{size,1}}], "W").
+
+
+
+transfer(A, AOpts, Data, B, BOpts, Match0) ->
+    Match = case proplists:get_value(mode, BOpts, list) of
+		list -> Match0;
+		binary -> list_to_binary(Match0)
+	    end,
+    io:format("Transfer: A=~w, Data=~p, B=~w, Match=~999p\n",
 	      [AOpts,Data,BOpts,Match]),
     uart:setopts(A, AOpts),
     uart:setopts(B, BOpts),
@@ -100,38 +149,42 @@ transfer(A, AOpts, Data, B, BOpts, Match) ->
 	
 recv_loop(_B, _Active, []) ->
     true;
+recv_loop(_B, _Active, <<>>) ->
+    true;
 recv_loop(B, true, Match) ->
     receive
 	{uart, B, Data} ->
-	    case lists:prefix(Data, Match) of
-		true ->
-		    recv_loop(B, true, Match--Data);
+	    case match(Data, Match) of
+		{true,Match1} -> recv_loop(B, true, Match1);
+		true -> true;
 		false ->
 		    exit({bad_match,Data})
 	    end
-    after 100 ->
+    after 1000 ->
 	    exit(receive_timeout)
     end;
 recv_loop(B, once, Match) ->
     receive
 	{uart, B, Data} ->
-	    case lists:prefix(Data, Match) of
-		true ->
+	    case match(Data, Match) of
+		{true, Match1} ->
 		    {ok,false} = uart:getopt(B, active),
 		    uart:setopt(B, active, once),
-		    recv_loop(B, once, Match--Data);
+		    recv_loop(B, once, Match1);
+		true -> true;
 		false ->
 		    exit({bad_match,Data})
 	    end
-    after 100 ->
+    after 1000 ->
 	    exit(receive_timeout)
     end;
 recv_loop(B, false, Match) ->
-    case uart:recv(B, 0, 10) of
+    case uart:recv(B, 0, 100) of
 	{ok, Data} ->
-	    case lists:prefix(Data, Match) of
-		true ->
-		    recv_loop(B, false, Match--Data);
+	    case match(Data, Match) of
+		{true,Match1} ->
+		    recv_loop(B, false, Match1);
+		true -> true;		
 		false ->
 		    exit({bad_match,Data})
 	    end;
@@ -145,7 +198,7 @@ recv(B, Active, Match) when Active =:= true; Active =:= once ->
 	    true;
 	{uart, B, Data} ->
 	    exit({bad_match,Data})
-    after 100 ->
+    after 1000 ->
 	    exit(receive_timeout)
     end;
 recv(B, false, Match) ->
@@ -158,7 +211,70 @@ recv(B, false, Match) ->
 	    exit(Error)
     end.
 
+match(Data, Match) when is_list(Data), is_list(Match) ->
+    case lists:prefix(Data, Match) of
+	true ->
+	    case Match--Data of
+		[] -> true;
+		More -> {true, More}
+	    end;
+	false ->
+	    false
+    end;
+match(Data, Match) when is_binary(Data), is_binary(Match) ->
+    Sz = byte_size(Data),
+    case Match of
+	<<Data:Sz/binary, Rest/binary>> ->
+	    if byte_size(Rest) =:= 0 ->
+		    true;
+	       true ->
+		    {true, Rest}
+	    end;
+	_ ->
+	    false
+    end.
 
+%%
+%% Test modem bits
+%%
+%% A         B
+%% DTR  =>   DSR,CD
+%% RTS  =>   CTS
+%%
+
+modem_test() ->
+    {ok,A} = open(a),
+    {ok,B} = open(b),
+    modem_test(A, B),
+    uart:close(A),
+    uart:close(B),
+    ok.
+    
+
+modem_test(A, B) ->
+    %% depending on modem pins available on A and B
+    %% clear pins
+    match_pins(A, B, [], [dtr,rts], []),
+    match_pins(B, A, [], [dtr,rts], []),
+    %% test RTS: A => B
+    match_pins(A, B, [rts], [], [cts]),
+    %% test RTS: B => A
+    match_pins(B, A, [rts], [], [cts]),
+    %% test DTR: A => B
+    match_pins(A, B, [dtr], [], [cd,dsr]),
+    %% test DTR: B => A
+    match_pins(B, A, [dtr], [], [cd,dsr]),
+
+    ok.
+
+match_pins(A, B, SetA,ClrA, MatchB) ->
+    uart:set_modem(A,SetA),
+    uart:clear_modem(A,ClrA),
+    {ok,BPins} = uart:get_modem(B),
+    uart:clear_modem(A,SetA),
+    io:format("match_pins: SetA=~p,ClrA=~p,MatchB=~p,BPins=~p\n", 
+	      [SetA,ClrA,MatchB,BPins]),
+    true = (lists:sort(MatchB) =:= lists:sort(BPins -- [ri,dtr,rts])).
 
 %%
 %% TEST 
@@ -175,12 +291,11 @@ encode_decode() ->
 	 {buftm, 250},
 	 {stopb, 1}, {stopb,2}, {stopb,3},
 	 {parity,none},{parity,odd},{parity,even},{parity,mark},
-	 {hwflow,true},{hwflow,false},
-	 {swflow,true},{swflow,false},
+	 {oflow,[dtr]},{oflow,[sw]},
+	 {iflow,[sw]}, {iflow,[cts]},
 	 {xonchar,$\^S},{xonchar,0},
 	 {xoffchar,$\^Q},{xoffchar,0},
-	 {eolchar,$\n}, {eolchar,$;},
-	 {eol2char,$\r}, {eolchar,$:},
+	 {eolchar,$\n}, {eolchar,$;}, {eolchar,$:},
 	 {active,true},{active,false},{active,once},
 	 {delay_send,true},{delay_send,false},
 	 {header,0},{header,10},
@@ -190,10 +305,7 @@ encode_decode() ->
 	 {packet,-1},{packet,-2},{packet,-3},{packet,-4},
 	 {packet,-5},{packet,-6},{packet,-7},{packet,-8},
 	 {packet,{size,16}},{packet,{size,1}},{packet,{size,64}},
-	 {packet,asn1},{packet,sunrm},{packet,cdr},
-	 {packet,fcgi},{packet,line},{packet,tpkt},
-	 {packet,http},{packet,httph},{packet,ssl_tls},
-	 {packet,http_bin},{packet,httph_bin},
+	 {packet,line},
 	 {packet_size,1024},
 	 {deliver,term},{deliver,port},
 	 {mode,list},{mode,binary},
@@ -203,7 +315,6 @@ encode_decode() ->
 	 {send_timeout_close, -1}, {send_timeout_close, 0}, 
 	 {send_timeout_close, 1000},
 	 {buffer,0}, {buffer,1}, {buffer,1024*64},
-	 {bit8,on}, {bit8,off}, {bit8,set}, {bit8,clear},
 	 {exit_on_close,true},	 {exit_on_close,false}
 	],
     Fail =
@@ -216,12 +327,11 @@ encode_decode() ->
 	 {buftm, -1},
 	 {stopb, 4}, {stopb, x},
 	 {parity, 15}, {parity, x},
-	 {hwflow, 12}, 
-	 {swflow, x},
+	 {oflow, 12}, 
+	 {iflow, [cls]},
 	 {xonchar, 256},{xonchar,x},
 	 {xoffchar, 256},{xoffchar,x},
 	 {eolchar, 256},{eolchar,x},
-	 {eol2char, 256},{eol2char,x},
 	 {active,x},{active,1},
 	 {delay_send,5},
 	 {packet, 9},
@@ -231,14 +341,12 @@ encode_decode() ->
 	 {deliver, beer},{deliver,1},
 	 {mode,sleep}, {mode,18},
 	 {buffer,-1},
-	 {bit8,x},
 	 {exit_on_close,x}
 	],
 
     lists:foreach(
       fun({Opt,Value}) ->
-	      Bin = uart:encode_opt(Opt,Value),
-	      [{Opt,Value}] = uart:decode_opts(Bin,[])
+	      uart:encode_opt(Opt,Value)
       end, Success),
     
     lists:foreach(

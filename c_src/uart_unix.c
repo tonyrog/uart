@@ -22,28 +22,21 @@
 #include <sys/uio.h>
 #include <sys/ioctl.h>
 
-#include "uart_api.h"
+#include "uart_drv.h"
+#include "dthread.h"
 
-typedef struct {
-    ErlDrvPort port;  // from open
-    int        fd;
-    int        reading;
-    int        writing;
-} uart_unix_data_t;
-
-#define HANDLE(h) ((void*) ((long)(h)))
-#define FD(h)     ((int)((long)(h)))
-
-// declare API functions
-UART_API_STATIC(uart_unix);
-
-uart_api_t uart_unix_api = UART_API_MAKE(uart_unix);
-
+#if defined(__APPLE__)
+#include <util.h>
+#define HAVE_PTY
+#else
+#include <pth.h>
+#define HAVE_PTY
+#endif
 
 static struct _rate {
     int baud;
     unsigned int speed;
-} rtab[] = 
+} rate_tab[] = 
 {
     {0,       B0     },
     {50,      B50    },
@@ -132,6 +125,14 @@ static struct _rate {
 #define HAVE_C_OSPEED 1
 #endif
 
+// save last error & return it
+static int uart_errno(uart_ctx_t* ctx)
+{
+    int err = errno;
+    ctx->error = err;
+    return err;
+}
+
 static int from_speed(unsigned int speed)
 {
 #ifdef DIRECT_SPEED
@@ -140,9 +141,9 @@ static int from_speed(unsigned int speed)
     int i = 0;
     int baud;
 
-    while((rtab[i].baud != -1) && (rtab[i].speed != speed))
+    while((rate_tab[i].baud != -1) && (rate_tab[i].speed != speed))
 	i++;
-    baud = rtab[i].baud;
+    baud = rate_tab[i].baud;
     return baud;
 #endif
 }
@@ -154,157 +155,159 @@ static unsigned int to_speed(int baud)
 #else
     int i = 0;
     int speed = 0;
-    while((rtab[i].baud != -1) && (baud > rtab[i].baud))
+    while((rate_tab[i].baud != -1) && (baud > rate_tab[i].baud))
 	i++;
-    if (rtab[i].baud == -1)
-	speed = rtab[i-1].speed;
+    if (rate_tab[i].baud == -1)
+	speed = rate_tab[i-1].speed;
     else 
-	speed = rtab[i].speed;
+	speed = rate_tab[i].speed;
     return speed;
 #endif
 }
 
-int uart_unix_open(ErlDrvPort port,uart_handle_t* hndl,char* devicename)
+static int open_device(uart_ctx_t* ctx, char* name)
 {
-    int fd;
     int flags;
-    uart_unix_data_t* ud;
+    int fd;
 
-    if (!(ud = (uart_unix_data_t*) driver_alloc(sizeof(uart_unix_data_t))))
-	return -1;
-    memset(ud, 0, sizeof(uart_unix_data_t));
-    if ((ud->fd = open(devicename, O_RDWR|O_NDELAY|O_NOCTTY)) < 0)
-	goto error;
-    ud->port = port;
-    fd = ud->fd;
+#ifdef HAVE_PTY
+    if (strcmp(name, "pty") == 0) {
+	int fd1;
+	char slave_name[UART_MAX_DEVICE_NAME];
+
+	if (openpty(&fd,&fd1,slave_name,NULL,NULL) < 0)
+	    return -1;
+	INFOF("slave name = %s", slave_name);
+	strcpy(name, slave_name);
+	// close(fd1); // ???
+    } else
+#endif
+    {
+	if ((fd = open(name, O_RDWR|O_NDELAY|O_NOCTTY)) < 0)
+	    return -1;
+    }
     flags = fcntl(fd, F_GETFL, 0);
     fcntl(fd, F_SETFL, flags | O_NONBLOCK);   // non-blocking!!!
 
     tcflush(fd, TCOFLUSH);
     tcflush(fd, TCIFLUSH);
-    hndl->data = ud;
-    hndl->api = &uart_unix_api;
-    hndl->flags = UART_HF_OPEN;   // device is open
-    return 0;
-error:
-    if (ud->fd >= 0) close(ud->fd);
-    driver_free(ud);
-    return -1;
+    ctx->fd = fd;
+    DEBUGF("open_device: %d", ctx->fd);
+    return fd;
 }
 
-static int uart_unix_close(void* arg)
+static void close_device(uart_ctx_t* ctx)
 {
-    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
-    driver_select(ud->port, (ErlDrvEvent)((long)(ud->fd)), ERL_DRV_USE, 0);
-    DEBUGF("uart_unix_close:");
-    driver_free(ud);
-    return 0;
+    if (ctx->fd >= 0) {
+	DEBUGF("close_device: %d", ctx->fd);
+	close(ctx->fd);
+	ctx->fd = -1;
+    }
 }
 
-static int uart_unix_read(void* arg, void* buf, size_t nbytes)
-{
-    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
-    return read(ud->fd, buf, nbytes);
-}
-
-static int uart_unix_write(void* arg, void* buf, size_t nbytes)
-{
-    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
-    return write(ud->fd, buf, nbytes);
-}
-
-static int uart_unix_select(void* arg, int mode, int on)
-{
-    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
-    return driver_select(ud->port, (ErlDrvEvent)((long)(ud->fd)), mode, on);
-}
-
-
-// FIXME: at least on darwin there are 
-// CCTS_OFLOW  - CTS flow control output
-// CRTS_IFLOW  - RTS flow control input
-// CDTR_IFLOW  - DTR flow control input
-// CDSR_OFLOW  - DSR flow control output
-// CCAR_OFLOW  - DCD flow control output
-// 
-// CRTSCTS = (CCTS_OFLOW | CRTS_IFLOW) !
-//
+// FIXME: use on linux subscribe to modem bits
 // TIOCMIWAIT   wait for modem bits to change
 // TCIOGICOUNT  count number of changes
 //
-#if defined(CCAR_OFLOW)
-#define HWFLOW  CCAR_OFLOW   // DCD flow control of output
-#else
-#define HWFLOW CRTSCTS
-#endif
+#define SET_BIT(fs, x) fs |= (x)
+#define CLR_BIT(fs, x) fs &= ~(x)
 
-static int uart_unix_get_com_state(void* arg, uart_com_state_t* state)
+#define UPD_BIT(fs, x, on) do {		\
+	if ((on)) SET_BIT(fs,x);	\
+	else CLR_BIT(fs,(x));		\
+    } while(0)
+
+
+static int get_com_state(int fd, uart_com_state_t* com)
 {
-    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
     struct termios tio;
     
-    if (tcgetattr(ud->fd, &tio) < 0) 
+    if (tcgetattr(fd, &tio) < 0) 
 	return -1;
 
     // input baud reate
-    state->ibaud = from_speed(cfgetispeed(&tio));
-    state->obaud = from_speed(cfgetospeed(&tio));
+    com->ibaud = from_speed(cfgetispeed(&tio));
+    com->obaud = from_speed(cfgetospeed(&tio));
 
     // parity
     if (tio.c_cflag & PARENB) {
 	if (tio.c_iflag & PARMRK)
-	    state->parity = 3;
+	    com->parity = 3;
 	else if (tio.c_cflag & PARODD)
-	    state->parity = 1;
+	    com->parity = 1;
 	else
-	    state->parity = 2;
+	    com->parity = 2;
     }
     else
-	state->parity = 0;
+	com->parity = 0;
     
     // stop bits
     if (tio.c_cflag & CSTOPB)
-	state->stopb = 2;
+	com->stopb = 2;
     else
-	state->stopb = 1;
+	com->stopb = 1;
 
     // csize
     switch(tio.c_cflag & CSIZE) {
-    case CS5: state->csize = 5; break;
-    case CS6: state->csize = 6; break;
-    case CS7: state->csize = 7; break;
-    case CS8: state->csize = 8; break;
+    case CS5: com->csize = 5; break;
+    case CS6: com->csize = 6; break;
+    case CS7: com->csize = 7; break;
+    case CS8: com->csize = 8; break;
     default: break;
     }
     
     // may be used for {packet, {size,N}} and also when
     // in {packet,N} (N!=0) when waiting for a certain amount of data
-    state->bufsz = tio.c_cc[VMIN];       // min number of bytes buffered
-    state->buftm = tio.c_cc[VTIME]*100;
-    state->xonchar = tio.c_cc[VSTART];
-    state->xoffchar = tio.c_cc[VSTOP];
-    state->eolchar = tio.c_cc[VEOL];
-    state->eol2char = tio.c_cc[VEOL2];
+    com->bufsz    = tio.c_cc[VMIN];       // min number of bytes buffered
+    com->buftm    = tio.c_cc[VTIME]*100;
+    com->xonchar  = tio.c_cc[VSTART];
+    com->xoffchar = tio.c_cc[VSTOP];
+    com->eolchar  = tio.c_cc[VEOL];
 
-    state->swflow = (tio.c_iflag & (IXON | IXOFF)) != 0;
-    state->hwflow = (tio.c_cflag & HWFLOW) != 0;
+    com->iflow = 0;
+    if (tio.c_iflag & IXOFF) com->iflow |= UART_SW;
+#if defined(CRTS_IFLOW)
+    if (tio.c_iflag & CRTS_IFLOW) com->iflow |= UART_RTS;
+#endif
+#if defined(CDTR_IFLOW)
+    if (tio.c_iflag & CDTR_IFLOW) com->iflow |= UART_DTR;
+#endif
+
+    com->oflow = 0;
+    if (tio.c_iflag & IXON) com->oflow |= UART_SW;
+#if defined(CCTS_OFLOW)
+    if (tio.c_iflag & CCTS_OFLOW) com->oflow |= UART_CTS;
+#endif
+#if defined(CDSR_OFLOW)
+    if (tio.c_iflag & CDSR_OFLOW) com->oflow |= UART_DSR;
+#endif
+#if defined(CCAR_OFLOW)
+    if (tio.c_iflag & CCAR_OFLOW) com->oflow |= UART_CD;
+#elif defined(CRTSCTS)
+    if (tio.c_iflags & CRTSCTS) {
+	com->oflow |= UART_CD;
+	com->iflow |= UART_RTS;
+    }
+#endif
     return 0;
 }
 
-static int uart_unix_set_com_state(void* arg, uart_com_state_t* state)
+static int set_com_state(int fd, uart_com_state_t* com)
 {
-    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
     struct termios tio;
 
     // read current state
-    if (tcgetattr(ud->fd, &tio) < 0)
+    if (tcgetattr(fd, &tio) < 0)
 	return -1;
 
-    cfsetispeed(&tio, to_speed(state->ibaud));
-    cfsetospeed(&tio, to_speed(state->obaud));
+    // On Mac os X IOSSIOSPEED can be used to set "non-traditional baud rate"
+    // From "IOKit/serial/ioss.h"
+
+    cfsetispeed(&tio, to_speed(com->ibaud));
+    cfsetospeed(&tio, to_speed(com->obaud));
 
     // update from state
-    switch(state->parity) {
+    switch(com->parity) {
     case 0: // none
 	tio.c_iflag &= ~PARMRK;
 	tio.c_cflag &= ~PARENB;
@@ -331,13 +334,13 @@ static int uart_unix_set_com_state(void* arg, uart_com_state_t* state)
 	break;
     }
 
-    if (state->stopb == 1)
+    if (com->stopb == 1)
 	tio.c_cflag &= ~CSTOPB;
-    else if (state->stopb == 2)
+    else if (com->stopb == 2)
 	tio.c_cflag |= CSTOPB;
 
     tio.c_cflag &= ~CSIZE;
-    switch(state->csize) {
+    switch(com->csize) {
     case 5: tio.c_cflag |= CS5; break;
     case 6: tio.c_cflag |= CS6; break;
     case 7: tio.c_cflag |= CS7; break;
@@ -345,26 +348,42 @@ static int uart_unix_set_com_state(void* arg, uart_com_state_t* state)
     default: break;
     }
     // Set the buffer number of bytes buffered before interrupt
-    if (state->bufsz > 255)
+    if (com->bufsz > 255)
 	tio.c_cc[VMIN] = 255;
     else
-	tio.c_cc[VMIN] = state->bufsz;
+	tio.c_cc[VMIN] = com->bufsz;
     // Set the max time to buffer bytes 
-    if (state->buftm > 25500)  // 25500 ms = 25.5 sec
+    if (com->buftm > 25500)  // 25500 ms = 25.5 sec
 	tio.c_cc[VTIME] = 255;
     else
-	tio.c_cc[VTIME] = state->buftm / 100;
-    tio.c_cc[VSTART] = state->xonchar;
-    tio.c_cc[VSTOP] = state->xoffchar;
-    if (state->swflow)
-	tio.c_iflag |= (IXON | IXOFF | IXANY);
-    else
-	tio.c_iflag &= ~(IXON | IXOFF | IXANY);
+	tio.c_cc[VTIME] = com->buftm / 100;
+    tio.c_cc[VSTART] = com->xonchar;
+    tio.c_cc[VSTOP] = com->xoffchar;
 
-    if (state->hwflow)
-	tio.c_cflag |= HWFLOW;
-    else
-	tio.c_cflag &= ~HWFLOW;
+    // input flow control
+    UPD_BIT(tio.c_iflag, IXOFF, (com->iflow & UART_SW));
+#if defined(CRTS_IFLOW)
+    UPD_BIT(tio.c_iflag, CRTS_IFLOW, (com->iflow & UART_RTS));
+#elif defined(CRTSCTS)
+    UPD_BIT(tio.c_iflag, CRTSCTS, (com->iflow & UART_RTS));
+#endif
+#if defined(CDTR_IFLOW)
+    UPD_BIT(tio.c_iflag, CDTR_IFLOW, (com->iflow & UART_DTR));
+#endif
+
+    // output flow control
+    UPD_BIT(tio.c_iflag, IXON, (com->oflow & UART_SW));
+#if defined(CCTS_OFLOW)
+    UPD_BIT(tio.c_iflag, CCTS_OFLOW, (com->oflow & UART_CTS));
+#endif
+#if defined(CDSR_OFLOW)
+    UPD_BIT(tio.c_iflag, CDSR_OFLOW, (com->oflow & UART_DSR));
+#endif
+#if defined(CCAR_OFLOW)
+    UPD_BIT(tio.c_iflag, CCAR_OFLOW, (com->oflow & UART_CD));
+#elif defined(CRTSCTS)
+    UPD_BIT(tio.c_iflag, CRTSCTS, (com->oflow & UART_CD));
+#endif
 
     // local line + enable receiver
     tio.c_cflag |= (CLOCAL | CREAD);
@@ -375,74 +394,750 @@ static int uart_unix_set_com_state(void* arg, uart_com_state_t* state)
 
 //    tio.c_cflag &= ~HUPCL;   // do NOT hangup-on-close 
     
-    tcflush(ud->fd, TCIFLUSH);
-    return tcsetattr(ud->fd, TCSANOW, &tio);
+    tcflush(fd, TCIFLUSH);
+    return tcsetattr(fd, TCSANOW, &tio);
 }
 
-static int uart_unix_send_break(void* arg, int duration)
+static int get_modem_state(int fd, uart_modem_state_t* state)
 {
-    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
-    return tcsendbreak(ud->fd, duration);
-}
-
-static int uart_unix_send_xon(void* arg)
-{
-    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
-    return tcflow(ud->fd, TCION);
-}
-
-static int uart_unix_send_xoff(void* arg)
-{
-    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
-    return tcflow(ud->fd, TCIOFF);
-}
-
-static int uart_unix_hangup(void* arg)
-{
-    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
-    struct termios tio;
-
-    // read current state
-    if (tcgetattr(ud->fd, &tio) < 0)
-	return -1;
-    cfsetispeed(&tio, B0);
-    cfsetospeed(&tio, B0);
-    return tcsetattr(ud->fd, TCSAFLUSH, &tio);
-}
-
-static int uart_unix_get_modem_state(void* arg, uart_modem_state_t* state)
-{
-    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
     int status, r, s;
 
-    if ((r = ioctl(ud->fd, TIOCMGET, &status)) < 0)
+    if ((r = ioctl(fd, TIOCMGET, &status)) < 0)
 	return r;
     s = 0;
-    if ((status & TIOCM_DTR) != 0) s |= UART_MODEM_DTR;
-    if ((status & TIOCM_RTS) != 0) s |= UART_MODEM_RTS;
-    if ((status & TIOCM_CTS) != 0) s |= UART_MODEM_CTS;
-    if ((status & TIOCM_CD)  != 0) s |= UART_MODEM_DCD;
-    if ((status & TIOCM_RNG) != 0) s |= UART_MODEM_RI;
-    if ((status & TIOCM_DSR) != 0) s |= UART_MODEM_DSR;
+    if ((status & TIOCM_DTR) != 0) s |= UART_DTR;
+    if ((status & TIOCM_RTS) != 0) s |= UART_RTS;
+    if ((status & TIOCM_CTS) != 0) s |= UART_CTS;
+    if ((status & TIOCM_CD)  != 0) s |= UART_CD;
+    if ((status & TIOCM_RNG) != 0) s |= UART_RI;
+    if ((status & TIOCM_DSR) != 0) s |= UART_DSR;
     *state = s;
     return 0;
 }
 
-static int uart_unix_set_modem_state(void* arg, uart_modem_state_t state, int on)
+static int set_modem_state(int fd, uart_modem_state_t state, int on)
 {
-    uart_unix_data_t* ud = (uart_unix_data_t*) arg;
     if (state) {
 	int status = 0;
-	if (state & UART_MODEM_DTR) status |= TIOCM_DTR;  // out
-	if (state & UART_MODEM_RTS) status |= TIOCM_RTS;  // out
-	if (state & UART_MODEM_CTS) status |= TIOCM_CTS;  // in
-	if (state & UART_MODEM_DCD) status |= TIOCM_CD;   // in
-	if (state & UART_MODEM_RI)  status |= TIOCM_RI;   // in|out?
-	if (state & UART_MODEM_DSR) status |= TIOCM_DSR;  // in
+	if (state & UART_DTR) status |= TIOCM_DTR;  // out
+	if (state & UART_RTS) status |= TIOCM_RTS;  // out
+	if (state & UART_CTS) status |= TIOCM_CTS;  // in
+	if (state & UART_CD)  status |= TIOCM_CD;   // in
+	if (state & UART_RI)  status |= TIOCM_RI;   // in|out?
+	if (state & UART_DSR) status |= TIOCM_DSR;  // in
 	if (on) 
-	    return ioctl(ud->fd, TIOCMBIS, &status);
+	    return ioctl(fd, TIOCMBIS, &status);
 	else
-	    return ioctl(ud->fd, TIOCMBIC, &status);
+	    return ioctl(fd, TIOCMBIC, &status);
     }
     return 0;
+}
+
+static int uart_final(uart_ctx_t* ctx)
+{
+    (void) ctx;
+    // clear everything
+    return 0;
+}
+
+void uart_init(uart_ctx_t* ctx, dthread_t* self, dthread_t* other) 
+{
+    memset(ctx, 0, sizeof(uart_ctx_t));
+    ctx->fd = -1;
+    ctx->option.bsize = UART_DEF_BUFFER; 
+    ctx->option.high = UART_HIGH_WATERMARK;
+    ctx->option.low  = UART_LOW_WATERMARK;
+    ctx->option.send_timeout = UART_INFINITY;
+    ctx->option.send_timeout_close = 0;
+
+    ctx->option.hsz = 0;                     // list header size
+    ctx->option.htype = UART_PB_RAW;         // default packet type
+    ctx->option.psize = 0;                   // no size check
+    ctx->option.mode    = UART_MODE_LIST;    // list mode
+    ctx->option.deliver = UART_DELIVER_TERM; // standard term format
+    ctx->option.active  = UART_PASSIVE;      // start passive
+    ctx->option.exitf   = 0;
+
+    uart_buf_init(&ctx->ib);
+    uart_queue_init(&ctx->oq);
+
+    com_state_init(&ctx->state);
+
+    ctx->port = self->port;
+    ctx->dport = self->dport;
+
+    ctx->self = self;
+    ctx->other = other;
+}
+
+static int apply_opts(uart_ctx_t* ctx,
+		      uart_com_state_t* state, uart_opt_t* option,
+		      int32_t sflags)
+{
+    int old_active;
+    unsigned int old_htype;
+
+    if ((sflags & (1 << UART_OPT_DEVICE)) &&
+	(strcmp(option->device_name, ctx->option.device_name) != 0)) {
+	
+	close_device(ctx);
+	sflags  = 0;
+	if (open_device(ctx, option->device_name) < 0)
+	    return -1;
+#ifdef DEBUG
+	// com_state_dump(stderr, state);
+#endif
+	if (set_com_state(ctx->fd, state) < 0) {
+	    DEBUGF("set_opts: uart_set_com_state failed");
+	    return -1;
+	}
+	if (get_com_state(ctx->fd, state) >= 0) {
+	    DEBUGF("set_opts: com_state: after");
+#ifdef DEBUG
+	    // com_state_dump(stderr, state);
+#endif
+	}
+	else {
+	    DEBUGF("apply_opts: get_com_state failed");
+	}
+    }
+    else if (sflags & UART_OPT_COMM) {
+	if (ctx->fd >= 0) {
+	    // DEBUGF("set_opts: com_state before:");
+	    // com_state_dump(stderr, state);
+	    if (set_com_state(ctx->fd, state) < 0)
+		return -1;
+	    sflags = 0;
+	    if (get_com_state(ctx->fd, state) >= 0) {
+		// DEBUGF("set_opts: com_state: after");
+#ifdef DEBUG
+		// com_state_dump(stderr, state);
+#endif
+	    }
+	}
+    }
+
+    old_active = ctx->option.active;
+    old_htype = ctx->option.htype;
+	    
+    ctx->sflags = sflags;
+    ctx->state  = *state;
+    ctx->option = *option;
+
+    if (ctx->fd >= 0) {
+	if (ctx->option.active) {
+	    if (!old_active || (ctx->option.htype != old_htype))
+		return 1;
+	    return 0;
+	}
+    }
+    return 0;
+}
+
+/*
+** Deliver packet ready 
+** if len == 0 then check start with a check for ready packet
+*/
+int uart_deliver(uart_ctx_t* ctx, int len)
+{
+    int count = 0;
+    int n;
+
+    DEBUGF("uart_deliver(%ld): s=%ld about to deliver %d bytes...",
+	   (long)ctx->port, (long)ctx->fd, len);
+
+    /* Poll for ready packet */
+    if (len == 0) {
+	/* empty buffer or waiting for more input */
+	if ((ctx->ib.base == NULL) || (ctx->ib.remain > 0))
+	    return count;
+	n = uart_buf_remain(&ctx->ib, &len, ctx->option.htype,
+			    ctx->option.psize);
+	if (n != 0) {
+	    if (n < 0) /* packet error */
+		return n;
+	    if (len > 0)  /* more data pending */
+		ctx->ib.remain = len;
+	    return count;
+	}
+    }
+
+    if (len > 0) {
+	int code;
+
+	code = uart_reply_data(ctx, (char*) ctx->ib.ptr_start, len);
+	ctx->recv = 0;
+
+	/* XXX The buffer gets thrown away on error  (code < 0)    */
+	/* Windows needs workaround for this in uart_uart_event...  */
+	if (code < 0)
+	    return code;
+	ctx->ib.ptr_start += len;
+	if (ctx->ib.ptr_start == ctx->ib.ptr)
+	    uart_buf_reset(&ctx->ib);
+	else
+	    ctx->ib.remain = 0;
+    }
+
+    count++;
+    len = 0;
+
+    if (!ctx->option.active) {
+	if (ctx->ib.base != NULL)
+	    uart_buf_restart(&ctx->ib);
+    }
+    else if (ctx->ib.base != NULL) {
+	n = uart_buf_remain(&ctx->ib, &len,
+			    ctx->option.htype, ctx->option.psize);
+	if (n != 0) {
+	    if (n < 0) /* packet error */
+		return n;
+	    uart_buf_restart(&ctx->ib);
+	    if (len > 0)
+		ctx->ib.remain = len;
+	    len = 0;
+	}
+    }
+    return count;
+}
+
+
+// The modem has closed, cleanup and send event
+int uart_recv_closed(uart_ctx_t* ctx)
+{
+#ifdef DEBUG
+    long port = (long) ctx->port; /* Used after driver_exit() */
+#endif
+    DEBUGF("uart_recv_closed(%ld)", port);
+
+    if (!ctx->option.active) {
+	uart_buf_reset(&ctx->ib);
+	if (ctx->option.exitf) {
+	    uart_queue_clear(&ctx->oq);
+	    close_device(ctx);
+	}
+	else {
+	    // stop_read_device(ctx);
+	}
+	uart_async_error(ctx, ctx->dport, ctx->caller, am_closed);
+	// async_error_am_all(ctx, am_closed);
+	/* next time EXBADSEQ will be delivered  */
+	DEBUGF("uart_recv_closed(%ld): passive reply all 'closed'", port);
+    }
+    else {
+	uart_buf_reset(&ctx->ib);
+	uart_closed_message(ctx);
+	if (ctx->option.exitf) {
+	    driver_exit(ctx->port, 0);
+	} else {
+	    // stop_read_device(ctx);
+	}
+	DEBUGF("uart_recv_closed(%ld): active close\r\n", port);
+    }
+    DEBUGF("uart_recv_closed(%ld): done\r\n", port);
+    return -1;
+}
+
+/* We have a read error determine the action */
+int uart_recv_error(uart_ctx_t* ctx, int err)
+{
+    if (err != EAGAIN) {
+	if (!ctx->option.active) {
+	    DEBUGF("uart_recv_error(%ld): cancel_timer", ctx->port);
+	    uart_buf_reset(&ctx->ib);
+	    if (ctx->option.exitf) {
+		close_device(ctx);
+	    } else {
+		// stop_read_device(ctx);
+	    }
+	    uart_async_error(ctx, ctx->dport, ctx->caller, am_closed);
+	    // async_error_am_all(ctx, error_atom(err));
+	} 
+	else {
+	    uart_buf_reset(&ctx->ib);
+	    uart_error_message(ctx, err); // first error
+	    uart_closed_message(ctx);     /* then closed */
+	    if (ctx->option.exitf)
+		dthread_exit(0);   // driver_exit(ctx->port, err);
+	    else
+		close_device(ctx);
+	}
+	return -1;
+    }
+    return 0;
+}
+
+#if 0
+int tx_send_error(uart_ctx_t* ctx, int err)
+{
+    (void) err;
+
+    /*
+     * We used to handle "expected errors" differently from unexpected ones.
+     * Now we handle all errors in the same way. We just have to distinguish
+     * between passive and active sockets.
+     */
+    DEBUGF("tx_send_error(%ld)", (long)ctx->port);
+    if (ctx->option.active) {
+	uart_closed_message(ctx);
+	uart_reply_error_am(ctx, am_closed);
+	if (ctx->option.exitf)
+	    dthread_exit(0); // driver_exit(ctx->port, 0);
+	else
+	    close_device(ctx);
+    }
+    else {
+	clear_output(ctx);
+	uart_ibuf_reset(ctx);
+	uart_reply_error_am(ctx, am_closed);
+	close_device(ctx);
+
+	if (ctx->caller) {
+	    uart_reply_error_am(ctx, am_closed);
+	}
+	else {
+	    /* No blocking send op to reply to right now.
+	     * If next op is a send, make sure it returns {error,closed}
+	     * rather than {error,enotconn}.
+	     */
+	    ctx->flags |= UART_F_DELAYED_CLOSE_SEND;
+	}
+
+	/*
+	 * Make sure that the next receive operation gets an {error,closed}
+	 * result rather than {error,enotconn}. That means that the caller
+	 * can safely ignore errors in the send operations and handle them
+	 * in the receive operation.
+	 */
+	ctx->flags |= UART_F_DELAYED_CLOSE_RECV;
+    }
+    return -1;
+}
+#endif
+
+
+
+// process input data, buffer according to packet type
+// return 0: no packet/data delivered
+// return 1: packet delivered
+// return -1: error
+//
+int process_input(uart_ctx_t* ctx, dthread_t* self, int request_len)
+{
+    int n;
+    int len;
+    int nread;
+
+    if (ctx->ib.base == NULL) {  /* allocte a read buffer */
+	nread = uart_buf_alloc(&ctx->ib,ctx->option.bsize,request_len);
+	if (nread < 0)
+	    return uart_recv_error(ctx, ENOMEM);
+    }
+    else if (request_len > 0) { /* we have a data in buffer and a request */
+	n = ctx->ib.ptr - ctx->ib.ptr_start;
+	if (n >= request_len)
+	    return uart_deliver(ctx, request_len);
+	else if (uart_buf_expand(&ctx->ib, request_len) < 0)
+	    return uart_recv_error(ctx, ENOMEM);
+	else
+	    ctx->ib.remain = nread = request_len - n;
+    }
+    else if (ctx->ib.remain == 0) {  /* poll remain from buffer data */
+	nread = uart_buf_remain(&ctx->ib, &len, 
+				ctx->option.htype,
+				ctx->option.psize);
+	if (nread < 0)
+	    return uart_recv_error(ctx, EMSGSIZE);
+	else if (nread == 0)
+	    return uart_deliver(ctx, len);
+	else if (len > 0)
+	    ctx->ib.remain = len;  /* set remain */
+    }
+    else  /* remain already set use it */
+	nread = ctx->ib.remain;
+    
+    DEBUGF("uart_recv(%ld): s=%ld about to read %d bytes...",
+	   (long)ctx->port, (long)ctx->fd, nread);
+
+    n = read(ctx->fd, ctx->ib.ptr, nread);
+
+    if (n < 0) {
+	int err = uart_errno(ctx);
+	if (err == EAGAIN) {
+	    DEBUGF(" => would block");
+	    return 0;
+	}
+	else {
+	    DEBUGF(" => error: %d", err);
+	    return uart_recv_error(ctx, err);
+	}
+    }
+    else if (n == 0) {
+	DEBUGF("  => detected close");
+	return uart_recv_closed(ctx);
+    }
+
+    DEBUGF(" => got %d bytes", n);
+    ctx->ib.ptr += n;
+    if (ctx->ib.remain > 0) {
+	ctx->ib.remain -= n;
+	if (ctx->ib.remain == 0)
+	    return uart_deliver(ctx, ctx->ib.ptr - ctx->ib.ptr_start);
+    }
+    else {
+	nread = uart_buf_remain(&ctx->ib, &len, 
+				ctx->option.htype,
+				ctx->option.psize);
+	if (read < 0)
+	    return uart_recv_error(ctx, EMSGSIZE);
+	else if (nread == 0)
+	    return uart_deliver(ctx, len);
+	else if (len > 0)
+	    ctx->ib.remain = len;  /* set remain */
+    }
+    return 0;
+}
+
+
+// process output queue
+int process_output(uart_ctx_t* ctx, dthread_t* self)
+{
+    dmessage_t* mp;
+    int r = 0;
+
+    while ((mp = ctx->oq.mesg) != NULL) {
+	int n = mp->used - ctx->oq.offs;
+
+	if ((r = write(ctx->fd, mp->buffer+ctx->oq.offs, n)) < 0) {
+	    if ((r < 0) && (errno == EAGAIN)) {
+		DEBUGF("uart_unix: process_output: EAGAIN");
+		return 0;
+	    }
+	    return -1;
+	}
+	else if (r < n) {
+	    ctx->oq.offs += r;
+	    return 0;
+	}
+	if (mp->from)
+	    dthread_port_send_ok(mp->source, self, mp->from, mp->ref);
+	dmessage_free(mp);
+	ctx->oq.offs = 0;
+	if ((mp = ctx->oq.front) == NULL)
+	    ctx->oq.mesg = NULL;
+	else {
+	    if (!(ctx->oq.front = mp->next))
+		ctx->oq.rear = NULL;
+	    ctx->oq.mesg = mp;
+	}
+    }
+    return r;
+}
+
+
+int enq_output(uart_ctx_t* ctx, dthread_t* self,
+	       dmessage_t* mp, ErlDrvTermData from)
+{
+    dmessage_t* mr;
+
+    mp->next = NULL;
+    mp->from = from;  // from = 0 => async
+
+    // set packet bytes header!
+    set_packet_bytes(mp, ctx->option.htype);
+
+    if ((ctx->oq.mesg == NULL) && (ctx->oq.front == NULL)) {
+	ctx->oq.offs = 0;
+	ctx->oq.mesg = mp;
+	return process_output(ctx, self);
+    }
+    else {
+	if ((mr = ctx->oq.rear) != NULL)
+	    mr->next = mp;
+	else
+	    ctx->oq.front = mp;
+	ctx->oq.rear = mp;
+	return 0;
+    }
+}
+
+
+// thread main!
+int uart_unix_main(void* arg)
+{
+    dthread_t* self = (dthread_t*) arg;
+    dthread_t* other = (dthread_t*) self->arg;
+    dmessage_t* mp = NULL;
+    dthread_poll_event_t ev, *evp;
+    size_t nev;
+    dterm_t term;
+    uart_ctx_t ctx;
+    ErlDrvTermData mp_from;
+    ErlDrvTermData mp_ref;
+    dthread_t*     mp_source;
+    int r;
+
+    dthread_set_debug(3);
+
+    DEBUGF("uart_unix: thread started");
+
+    uart_init(&ctx, self, other);
+
+    dterm_init(&term);
+again:
+    nev = 0;
+    evp = NULL;
+    if (ctx.fd >= 0) {
+	ev.event = (ErlDrvEvent) ((long)ctx.fd);
+	ev.events = 0;
+	if ((ctx.option.active != UART_PASSIVE) || ctx.recv)
+	    ev.events |= ERL_DRV_READ;
+	if (ctx.oq.mesg)
+	    ev.events |= ERL_DRV_WRITE;
+	if (ev.events) {
+	    evp = &ev;
+	    nev = 1;
+	}
+    }
+
+    r = dthread_poll(self, evp, &nev, -1);
+
+    if (r < 0) {
+	DEBUGF("uart_unix_main: dthread_poll failed=%d", r);
+	goto again;
+    }
+    else {
+	DEBUGF("uart_unix_main: r=%d", r);
+
+	if (evp && (nev == 1)) {
+	    if (evp->revents & ERL_DRV_WRITE)
+		process_output(&ctx, self);
+	    if (evp->revents & ERL_DRV_READ) {
+		while((process_input(&ctx, self, 0) == 1) && 
+		      (ctx.option.active != UART_PASSIVE))
+		    ;
+	    }
+	}
+	if (r == 0)
+	    goto again;
+
+	// r>0 (number of messages)
+	if ((mp = dthread_recv(self, NULL)) == NULL) {
+	    DEBUGF("uart_unix_main: message was NULL");
+	    goto again;
+	}
+	mp_from = mp->from;
+	mp_ref  = mp->ref;
+	mp_source = mp->source;
+
+	switch (mp->cmd) {
+	case DTHREAD_STOP:
+	    DEBUGF("uart_unix_main: STOP");
+	    close_device(&ctx);
+	    uart_final(&ctx);
+	    dmessage_free(mp);
+	    DEBUGF("uart_unix_main: EXIT");
+	    dthread_exit(0);
+	    break;
+
+	case DTHREAD_OUTPUT: // async send!
+	    DEBUGF("uart_unix_main: OUTPUT");
+	    if (ctx.fd < 0) {
+		dmessage_free(mp);
+		goto again;
+	    }
+	    if (enq_output(&ctx, self, mp, 0) < 0) {
+		mp = NULL;
+		goto error;
+	    }
+	    goto again;
+
+	case UART_CMD_CLOSE:
+	    DEBUGF("uart_unix_main: CLOSE");
+	    close_device(&ctx);
+	    goto ok;
+
+	case UART_CMD_SEND: // sync send
+	    DEBUGF("uart_unix_main: SEND");
+	    if (ctx.fd < 0) goto ebadf;
+	    if (enq_output(&ctx, self, mp, mp_from) < 0) {
+		mp = NULL;
+		goto error;
+	    }
+	    goto again;
+	    
+	case UART_CMD_SENDCHAR: // sync send
+	    DEBUGF("uart_unix_main: SENDCHAR");
+	    if (ctx.fd < 0) goto ebadf;
+	    if (enq_output(&ctx, self, mp, mp_from) < 0) {
+		mp = NULL;
+		goto error;
+	    }
+	    goto again;
+
+	case UART_CMD_RECV: {  // <<Time:32, Length:32>> Time=0xffffffff=inf
+	    uint32_t tmo;
+	    int len;
+	    if (ctx.fd < 0) goto ebadf;
+	    if (ctx.ib.remain) goto ealready;
+	    if (mp->used != 8) goto badarg;
+	    if (ctx.option.active != UART_PASSIVE) goto badarg;
+	    tmo = get_uint32((uint8_t*) mp->buffer);
+	    len = (int) get_uint32((uint8_t*) (mp->buffer+4));
+	    if ((len < 0) || (len > UART_MAX_PACKET_SIZE)) goto badarg;
+	    ctx.ref = mp_ref;
+	    ctx.caller = mp_from;
+	    ctx.itmo = tmo;  // FIXME: process timeout
+	    ctx.recv = 1;    // We are process sync recv
+	    process_input(&ctx, self, len);
+	    goto again;
+	}
+
+	case UART_CMD_UNRECV: {  // argument is data to push back
+	    uart_buf_push(&ctx.ib, mp->buffer, mp->used);
+	    while((process_input(&ctx, self, 0) == 1) && 
+		  (ctx.option.active != UART_PASSIVE))
+		;
+	    goto ok;
+	}
+
+	case UART_CMD_SETOPTS: {
+	    uart_com_state_t state  = ctx.state;
+	    uart_opt_t       option = ctx.option;
+	    uint32_t         sflags = ctx.sflags;
+
+	    // parse & update options in state,option and sflag
+	    if (uart_parse_opts(mp->buffer, mp->used, 
+				&state, &option, &sflags) < 0)
+		goto badarg;
+
+	    //  apply the changed values
+	    if ((r=apply_opts(&ctx, &state, &option, sflags)) < 0) {
+		INFOF("apply_opts: error=%s\n", strerror(errno));
+		goto badarg;
+	    }
+	    if (r == 1) {
+		while((process_input(&ctx, self, 0) == 1) && 
+		      (ctx.option.active != UART_PASSIVE))
+		    ;
+	    }
+	    goto ok;
+	}
+
+	case UART_CMD_GETOPTS: {
+	    // {Ref, {ok,List}} || {Ref, {error,Reason}}
+	    dterm_put2(&term, ERL_DRV_UINT, mp_ref);
+	    dterm_put2(&term, ERL_DRV_ATOM, am_ok);
+	    if (uart_get_opts(&term, &ctx,(uint8_t*)mp->buffer,mp->used) < 0) {
+		dterm_reset(&term);
+		goto badarg;
+	    }
+	    dterm_put2(&term, ERL_DRV_TUPLE, 2);
+	    dterm_put2(&term, ERL_DRV_TUPLE, 2);
+	    dthread_port_send_dterm(mp_source, self, mp_from, &term);
+	    dterm_reset(&term);
+	    dmessage_free(mp);
+	    goto again;
+	}
+
+	case UART_CMD_GET_MODEM: {
+	    uart_modem_state_t mstate;
+	    if (ctx.fd < 0) goto ebadf;
+	    if (get_modem_state(ctx.fd, &mstate) < 0) goto error;
+	    dterm_put2(&term, ERL_DRV_UINT, mp->ref);
+	    dterm_put2(&term, ERL_DRV_ATOM, am_ok);
+	    modem_state_dterm(&term, mstate);
+	    dterm_put2(&term, ERL_DRV_TUPLE, 2);
+	    dterm_put2(&term, ERL_DRV_TUPLE, 2);
+	    dthread_port_send_dterm(mp_source, self, mp_from, &term);
+	    dterm_reset(&term);
+	    dmessage_free(mp);
+	    goto again;
+	}
+
+	case UART_CMD_SET_MODEM: {
+	    uart_modem_state_t mstate;	    
+	    if (ctx.fd < 0) goto ebadf;
+	    if (mp->used != 4) goto badarg;
+	    mstate = (uart_modem_state_t) get_uint32((uint8_t*) mp->buffer);
+	    if (set_modem_state(ctx.fd, mstate, 1) < 0) goto error;
+	    goto ok;
+	}
+
+	case UART_CMD_CLR_MODEM: {
+	    uart_modem_state_t mstate;
+	    if (ctx.fd < 0) goto ebadf;
+	    if (mp->used != 4) goto badarg;
+	    mstate = (uart_modem_state_t) get_uint32((uint8_t*) mp->buffer);
+	    if (set_modem_state(ctx.fd, mstate, 0) < 0) goto error;
+	    goto ok;
+	}
+		
+	case UART_CMD_HANGUP: {
+	    struct termios tio;
+	    int r;
+	    if (ctx.fd < 0) goto ebadf;
+	    if (mp->used != 0) goto badarg;
+	    if ((r = tcgetattr(ctx.fd, &tio)) < 0) {
+		INFOF("tcgetattr: error=%s\n", strerror(errno));
+		goto badarg;
+	    }
+	    cfsetispeed(&tio, B0);
+	    cfsetospeed(&tio, B0);
+	    if ((r = tcsetattr(ctx.fd, TCSANOW, &tio)) < 0) {
+		INFOF("tcsetattr: error=%s\n", strerror(errno));
+		goto badarg;		
+	    }
+	    goto ok;
+	}
+		
+	case UART_CMD_BREAK: {
+	    int duration;
+	    if (ctx.fd < 0) goto ebadf;
+	    if (mp->used != 4) goto badarg;
+	    duration = (int) get_uint32((uint8_t*) mp->buffer);		
+	    if (tcsendbreak(ctx.fd, duration) < 0)
+		goto error;
+	    goto ok;
+	}
+	    
+	case UART_CMD_FLOW:
+	    if (ctx.fd < 0) goto ebadf;
+	    if (mp->used != 1) goto badarg;
+	    switch(mp->buffer[0]) {
+	    case 0: r = tcflow(ctx.fd, TCIOFF); break;
+	    case 1: r = tcflow(ctx.fd, TCION); break;
+	    case 2: r = tcflow(ctx.fd, TCOOFF); break;
+	    case 3: r = tcflow(ctx.fd, TCOON); break;
+	    default: goto badarg; break;
+	    }
+	    if (r < 0)
+		goto error;
+	    goto ok;
+
+	default:
+	    goto badarg;
+	}
+    }
+
+ok:
+    dthread_port_send_ok(mp_source, self,  mp_from, mp_ref);
+    if (mp) dmessage_free(mp);
+    goto again;
+
+ebadf:
+    errno = EBADF;
+    goto error;
+badarg:
+    errno = EINVAL;
+    goto error;
+ealready:
+    errno = EALREADY;
+    goto error;
+
+error:
+    dthread_port_send_error(mp_source, self, mp_from, mp_ref,
+			    uart_errno(&ctx));
+    if (mp) dmessage_free(mp);
+    goto again;
 }

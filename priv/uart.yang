@@ -1,0 +1,223 @@
+/*
+ * YANG description of a UART options
+ *
+ */
+module uart {
+    namespace "http://rogvall.se/ns/uart";
+    prefix uart;
+
+    organization
+	"Rogvall Invest AB";
+
+    contact
+	"Tony Rogvall <tony@rogvall.se>";
+
+    description 
+	"UART device settings";
+
+    revision 2012-04-26 {
+       description
+         "Initial revision.";
+    }
+
+    grouping uart-config {
+	leaf device {
+	    type string { length "1..255"; }
+	}
+	leaf baud {
+	    type uint32;
+	    default 9600;
+	}
+	leaf ibaud {
+	    type uint32;
+	    default 9600;
+	}
+	leaf obaud {
+	    type uint32;
+	    default 9600;
+	}
+	leaf csize {
+	    type uint8 { range "5..8"; }
+	    default 8;
+	}
+	leaf bufsz {
+	    type uint8;
+	    default 1;
+	}
+	leaf buftm {
+	    type uint8;
+	    default 0;
+	}
+	leaf stopb {
+	    type uint8 { range "1..3"; }
+	    default 1;
+	}
+	leaf parity {
+	    type enumeration {
+		enum none { 
+		    value "0";
+		}
+		enum odd { 
+		    value "1";
+		}
+		enum even { 
+		    value "2";
+		}
+		enum mark { 
+		    value "3";
+		}
+	    }
+	}
+	// FIXME
+	// iflow = { [sw] [ rts | dtr ] }
+	// oflow = { [sw] | cts | dsr | dcd }
+
+	leaf hwflow {
+	    type boolean;
+	}
+	leaf swflow {
+	    type boolean;
+	}
+	leaf xonchar {
+	    type uint8;
+	}
+	leaf xoffchar {
+	    type uint8;
+	}
+	leaf eolhar {
+	    type uint8;
+	}
+	leaf eol2char {
+	    type uint8;
+	}
+	leaf active {
+	    type enumeration {
+		enum false { 
+		    value "0";
+		}
+		enum true { 
+		    value "1";
+		}
+		enum once { 
+		    value "2";
+		}
+	    }
+	}
+	leaf delay_send {
+	    type boolean;
+	}
+	leaf header {
+	    type uint32;
+	}
+	leaf packet_size {
+	    type uint32;
+	}
+	leaf deliver {
+	    type enumeration {
+		enum port { 
+		    value "0";
+		}
+		enum term { 
+		    value "1";
+		}
+	    }
+	}
+	leaf mode {
+	    type enumeration {
+		enum list { 
+		    value "0";
+		}
+		enum binary { 
+		    value "1";
+		}
+	    }
+	}
+
+	choice packet {
+
+	    leaf raw {
+		type uint16;
+		default 0;
+		description "No packaging is done. buf if and argument > 0 
+                                 is given, fixed size packeting is used.";
+	    }
+
+	    container packet-bytes {
+		leaf num {
+		    type uint8 {
+			range "1..8";
+		    }
+		}
+		choice endian {
+		    leaf big    { type empty; }
+		    leaf little { type empty; }
+		}
+	    }
+	    leaf asn1 { 
+		type empty;
+		description "ASN.1 BER";
+	    }
+	    leaf sunrm { 
+		type empty;
+		description "Sun's RPC encoding";
+	    }
+	    leaf cdr { 
+		type empty;
+		description "CORBA (GIOP 1.1)";
+	    }
+	    leaf fcgi { 
+		type empty;
+		description "Fast CGI";
+	    }
+	    leaf line { 
+		type empty;
+		description "Line mode, a packet is a line terminated with newline";
+	    }
+	    leaf tpkt { 
+		type empty;
+		description "TPKT format [RFC1006]";
+	    }
+	    leaf ssl_tls { 
+		type empty;
+		description "";
+	    }
+	    
+	    leaf http { 
+		type empty;
+		description "The Hypertext Transfer Protocol";
+	    }
+	    leaf httph { 
+		type empty;
+		description "The Hypertext Transfer Protocol";
+	    }
+	    leaf http_bin { 
+		type empty;
+		description "The Hypertext Transfer Protocol";
+	    }
+	    leaf httph_bin { 
+		type empty;
+		description "The Hypertext Transfer Protocol";
+	    }
+	}
+
+	leaf high_watermark {
+	    type uint32;
+	}
+	leaf low_watermark {
+	    type uint32;
+	}
+	leaf send_timeout {
+	    type uint32;
+	}
+	leaf send_timeout_close {
+	    type uint32;
+	}
+	leaf buffer { 
+	    type uint32;
+	}
+	leaf exit_on_close {
+	    type boolean;
+	    default "true";
+	}
+    }
+}

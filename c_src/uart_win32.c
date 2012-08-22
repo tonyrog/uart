@@ -7,6 +7,16 @@
 #include <stdio.h>
 #include "windows.h"
 
+#define EAGAIN       ERROR_IO_PENDING
+#define EWOULDBLOCK  ERROR_IO_PENDING
+#define ENOMEM       ERROR_NOT_ENOUGH_MEMORY
+#define EINVAL       ERROR_BAD_ARGUMENTS
+#define EBUSY        ERROR_BUSY
+#define EOVERFLOW    ERROR_TOO_MANY_CMDS
+#define EMSGSIZE     ERROR_NO_DATA
+#define ENOTCONN     ERROR_PIPE_NOT_CONNECTED
+#define EINTR        ERROR_INVALID_AT_INTERRUPT_TIME //dummy
+
 #include "uart_api.h"
 
 // debug output - preserve last error
@@ -30,12 +40,7 @@ typedef struct {
     DWORD      statm;     // Status result
     BOOLEAN    reading;
     BOOLEAN    writing;
-} uart_win_data_t;
-
-// declare API functions
-UART_API_STATIC(uart_win);
-
-uart_api_t uart_win_api = UART_API_MAKE(uart_win);
+} uart_win32_data_t;
 
 static struct _rate {
     int baud;
@@ -59,6 +64,17 @@ static struct _rate {
     {256000, CBR_256000},
     { -1,    0}
 };
+
+extern void _dosmaperr(DWORD);
+extern int  errno;
+
+static int uart_errno(uart_ctx_t* ctx)
+{
+    int error = GetLastError();
+    _dosmaperr(error);
+    ctx->error = errno;
+    return errno;
+}
 
 static int from_speed(DWORD speed)
 {
@@ -91,14 +107,14 @@ static DWORD to_speed(int baud)
 // 
 //
 
-int uart_win_open(ErlDrvPort port,uart_handle_t* hndl, char* devicename)
+int uart_win32_open(ErlDrvPort port,uart_handle_t* hndl, char* devicename)
 {
     HANDLE h;
-    uart_win_data_t* wd;
+    uart_win32_data_t* wd;
 
-    if (!(wd = (uart_win_data_t*) driver_alloc(sizeof(uart_win_data_t))))
+    if (!(wd = (uart_win32_data_t*) driver_alloc(sizeof(uart_win32_data_t))))
 	return -1;
-    memset(wd, 0, sizeof(uart_win_data_t));
+    memset(wd, 0, sizeof(uart_win32_data_t));
     wd->port = port;
     wd->fh = CreateFile(devicename,
 			GENERIC_READ | GENERIC_WRITE, 
@@ -130,7 +146,7 @@ int uart_win_open(ErlDrvPort port,uart_handle_t* hndl, char* devicename)
     // SetCommMask(wd->fh, EV_RXCHAR);
     WaitCommEvent(wd->fh, &wd->statm, &wd->stat);
     hndl->data = (void*) wd;
-    hndl->api = &uart_win_api;
+    hndl->api = &uart_win32_api;
     return 0;
 
 error:
@@ -142,9 +158,9 @@ error:
     return -1;
 }
 
-static int uart_win_close(void* arg)
+static int uart_win32_close(void* arg)
 {
-    uart_win_data_t* wd = (uart_win_data_t*) arg;
+    uart_win32_data_t* wd = (uart_win32_data_t*) arg;
 
     if (wd->fh != INVALID_HANDLE_VALUE)
 	driver_select(wd->port, wd->fh, ERL_DRV_USE,0);
@@ -155,14 +171,14 @@ static int uart_win_close(void* arg)
     if (wd->stat.hEvent) 
 	driver_select(wd->port,wd->stat.hEvent,ERL_DRV_USE,0);
 
-    DEBUGF("uart_win_close:");
+    DEBUGF("uart_win32_close:");
     driver_free(wd);
     return 0;
 }
 
-static int uart_win_read(void* arg, void* buf, size_t nbytes)
+static int uart_win32_read(void* arg, void* buf, size_t nbytes)
 {
-    uart_win_data_t* wd = (uart_win_data_t*) arg;
+    uart_win32_data_t* wd = (uart_win32_data_t*) arg;
     DWORD nread;
     if (!wd->reading) {
 	// store buf & nbytes to check later ?
@@ -187,9 +203,9 @@ static int uart_win_read(void* arg, void* buf, size_t nbytes)
     return nread;
 }
 
-static int uart_win_write(void* arg, void* buf, size_t nbytes)
+static int uart_win32_write(void* arg, void* buf, size_t nbytes)
 {
-    uart_win_data_t* wd = (uart_win_data_t*) arg;
+    uart_win32_data_t* wd = (uart_win32_data_t*) arg;
     DWORD nwritten;
 
     // For windows we probably need to copy buf to be safe
@@ -225,9 +241,9 @@ static int uart_win_write(void* arg, void* buf, size_t nbytes)
 //
 //  ERL_DRV_USE, 0    => stop using fh & events 
 //
-static int uart_win_select(void* arg, int mode, int on)
+static int uart_win32_select(void* arg, int mode, int on)
 {
-    uart_win_data_t* wd = (uart_win_data_t*) arg;
+    uart_win32_data_t* wd = (uart_win32_data_t*) arg;
     switch(mode) {
     case ERL_DRV_USE:
 	if (wd->fh != INVALID_HANDLE_VALUE)
@@ -262,9 +278,9 @@ static int uart_win_select(void* arg, int mode, int on)
 }
 
 
-static int uart_win_get_com_state(void* arg, uart_com_state_t* state)
+static int uart_win32_get_com_state(void* arg, uart_com_state_t* state)
 {
-    uart_win_data_t* wd = (uart_win_data_t*) arg;
+    uart_win32_data_t* wd = (uart_win32_data_t*) arg;
     DCB        dcb;       // Comm parameter block
     COMMTIMEOUTS commtimeouts;
 
@@ -306,16 +322,15 @@ static int uart_win_get_com_state(void* arg, uart_com_state_t* state)
     state->xonchar  = dcb.XonChar;
     state->xoffchar = dcb.XoffChar;
     state->eolchar  = '\n';
-    state->eol2char = 0;
 
     state->swflow = dcb.fOutX;
     state->hwflow = dcb.fOutxCtsFlow;
     return 0;
 }
 
-static int uart_win_set_com_state(void* arg, uart_com_state_t* state)
+static int uart_win32_set_com_state(void* arg, uart_com_state_t* state)
 {
-    uart_win_data_t* wd = (uart_win_data_t*) arg;
+    uart_win32_data_t* wd = (uart_win32_data_t*) arg;
     DCB        dcb;       // Comm parameter block
     COMMTIMEOUTS commtimeouts;
     int baud;
@@ -389,43 +404,43 @@ static int uart_win_set_com_state(void* arg, uart_com_state_t* state)
 }
 
 // FIXME
-int uart_win_send_break(void* arg, int duration)
+int uart_win32_send_break(void* arg, int duration)
 {
-    uart_win_data_t* wd = (uart_win_data_t*) arg;
+    uart_win32_data_t* wd = (uart_win32_data_t*) arg;
     EscapeCommFunction(wd->fh, SETBREAK);
     // delay duration
     EscapeCommFunction(wd->fh, CLRBREAK);
     return 0;
 }
 
-int uart_win_send_xon(void* arg)
+int uart_win32_send_xon(void* arg)
 {
-    uart_win_data_t* wd = (uart_win_data_t*) arg;
+    uart_win32_data_t* wd = (uart_win32_data_t*) arg;
     (void) wd;
     // Force, send the Xon character
     return 0;
 }
 
-int uart_win_send_xoff(void* arg)
+int uart_win32_send_xoff(void* arg)
 {
-    uart_win_data_t* wd = (uart_win_data_t*) arg;
+    uart_win32_data_t* wd = (uart_win32_data_t*) arg;
     (void) wd;
     // Force, send the Xoff character
     return 0;
 }
 
-static int uart_win_hangup(void* arg)
+static int uart_win32_hangup(void* arg)
 {
-    uart_win_data_t* wd = (uart_win_data_t*) arg;
+    uart_win32_data_t* wd = (uart_win32_data_t*) arg;
     (void) wd;
     // FIXME
     return 0;
 }
 
 
-static int uart_win_set_modem_state(void* arg, uart_modem_state_t state, int on)
+static int uart_win32_set_modem_state(void* arg, uart_modem_state_t state, int on)
 {
-    uart_win_data_t* wd = (uart_win_data_t*) arg;
+    uart_win32_data_t* wd = (uart_win32_data_t*) arg;
     if (state & UART_MODEM_DTR)
 	EscapeCommFunction(wd->fh, on ? SETDTR : CLRDTR);
     if (state & UART_MODEM_RTS)
@@ -433,9 +448,9 @@ static int uart_win_set_modem_state(void* arg, uart_modem_state_t state, int on)
     return 0;
 }
 
-static int uart_win_get_modem_state(void* arg, uart_modem_state_t* state)
+static int uart_win32_get_modem_state(void* arg, uart_modem_state_t* state)
 {
-    uart_win_data_t* wd = (uart_win_data_t*) arg;
+    uart_win32_data_t* wd = (uart_win32_data_t*) arg;
     DCB dcb;
     DWORD status;
     int s = 0;
