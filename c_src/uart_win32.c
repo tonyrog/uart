@@ -112,9 +112,8 @@ int uart_win32_open(ErlDrvPort port,uart_handle_t* hndl, char* devicename)
     HANDLE h;
     uart_win32_data_t* wd;
 
-    if (!(wd = (uart_win32_data_t*) driver_alloc(sizeof(uart_win32_data_t))))
+    if (!(wd = (uart_win32_data_t*) DZALLOC(sizeof(uart_win32_data_t))))
 	return -1;
-    memset(wd, 0, sizeof(uart_win32_data_t));
     wd->port = port;
     wd->fh = CreateFile(devicename,
 			GENERIC_READ | GENERIC_WRITE, 
@@ -154,7 +153,7 @@ error:
     if (wd->in.hEvent) CloseHandle(wd->in.hEvent);
     if (wd->out.hEvent) CloseHandle(wd->out.hEvent);
     if (wd->stat.hEvent) CloseHandle(wd->stat.hEvent);
-    driver_free(wd);
+    DFREE(wd);
     return -1;
 }
 
@@ -172,7 +171,7 @@ static int uart_win32_close(void* arg)
 	driver_select(wd->port,wd->stat.hEvent,ERL_DRV_USE,0);
 
     DEBUGF("uart_win32_close:");
-    driver_free(wd);
+    DFREE(wd);
     return 0;
 }
 

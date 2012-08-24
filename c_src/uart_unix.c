@@ -165,6 +165,86 @@ static unsigned int to_speed(int baud)
 #endif
 }
 
+
+
+//
+// t1 - t0 - t1 MUST be greater equal to t0 (later in time)
+// or 0 is returned
+//
+unsigned long diff_time_ms(ErlDrvNowData* t1, ErlDrvNowData* t0)
+{
+    unsigned long dm,ds,du;
+    unsigned long d = 0;
+    unsigned long b;
+    unsigned long t;
+
+    if (t1->microsecs >= t0->microsecs) {
+	du = t1->microsecs - t0->microsecs;
+	b = 0;
+    }
+    else {
+	du = (1000000 + t1->microsecs) - t0->microsecs;
+	b = 1;
+    }
+
+    t = t0->secs+b;
+    if (t1->secs >= t) {
+	ds = t1->secs - t;
+	b = 0;
+    }
+    else {
+	ds = (t1->secs+1000000) - t;
+	b = 1;
+    }
+
+    t = t0->megasecs+b;
+    if (t1->megasecs >= t) {
+	dm = t1->megasecs - t;
+	b = 0;
+    }
+    else {
+	dm = (t1->megasecs+1000000) - t;
+	b = 1;
+    }
+    if (b == 1)
+	return 0;
+    d = du/1000;
+    if (ds)
+	d += ds*1000;
+    if (dm) 
+	d += dm*1000000000;
+    return d;
+}
+
+void clear_timeout(uart_ctx_t* ctx)
+{
+    ctx->recv = 0;
+    ctx->tp = NULL;
+}
+
+void set_timeout(uart_ctx_t* ctx, uint32_t tmo)
+{
+    if (tmo == 0xFFFFFFFF)
+	return;
+    driver_get_now(&ctx->t0);
+    ctx->recv = 1;
+    ctx->tp = &ctx->t0;
+    ctx->tmo = tmo;
+}
+
+int next_timeout(uart_ctx_t* ctx)
+{
+    ErlDrvNowData t1;
+    unsigned long td;
+    if (ctx->tp == NULL)
+	return -1;
+    driver_get_now(&t1);
+    td = diff_time_ms(&t1, ctx->tp);
+    if (td >= ctx->tmo)
+	return 0;
+    return ctx->tmo - td;
+}
+
 static int open_device(uart_ctx_t* ctx, char* name)
 {
     int flags;
@@ -435,8 +515,7 @@ static int set_modem_state(int fd, uart_modem_state_t state, int on)
 
 static int uart_final(uart_ctx_t* ctx)
 {
-    (void) ctx;
-    // clear everything
+    uart_buf_finish(&ctx->ib);
     return 0;
 }
 
@@ -566,7 +645,7 @@ int uart_deliver(uart_ctx_t* ctx, int len)
 	int code;
 
 	code = uart_reply_data(ctx, (char*) ctx->ib.ptr_start, len);
-	ctx->recv = 0;
+	clear_timeout(ctx);
 
 	/* XXX The buffer gets thrown away on error  (code < 0)    */
 	/* Windows needs workaround for this in uart_uart_event...  */
@@ -605,10 +684,7 @@ int uart_deliver(uart_ctx_t* ctx, int len)
 // The modem has closed, cleanup and send event
 int uart_recv_closed(uart_ctx_t* ctx)
 {
-#ifdef DEBUG
-    long port = (long) ctx->port; /* Used after driver_exit() */
-#endif
-    DEBUGF("uart_recv_closed(%ld)", port);
+    DEBUGF("uart_recv_closed(%ld)", (long) ctx->port);
 
     if (!ctx->option.active) {
 	uart_buf_reset(&ctx->ib);
@@ -622,7 +698,8 @@ int uart_recv_closed(uart_ctx_t* ctx)
 	uart_async_error(ctx, ctx->dport, ctx->caller, am_closed);
 	// async_error_am_all(ctx, am_closed);
 	/* next time EXBADSEQ will be delivered  */
-	DEBUGF("uart_recv_closed(%ld): passive reply all 'closed'", port);
+	DEBUGF("uart_recv_closed(%ld): passive reply all 'closed'",
+	       (long) ctx->port);
     }
     else {
 	uart_buf_reset(&ctx->ib);
@@ -632,9 +709,9 @@ int uart_recv_closed(uart_ctx_t* ctx)
 	} else {
 	    // stop_read_device(ctx);
 	}
-	DEBUGF("uart_recv_closed(%ld): active close\r\n", port);
+	DEBUGF("uart_recv_closed(%ld): active close\r\n", (long) ctx->port);
     }
-    DEBUGF("uart_recv_closed(%ld): done\r\n", port);
+    DEBUGF("uart_recv_closed(%ld): done\r\n", (long) ctx->port);
     return -1;
 }
 
@@ -861,7 +938,7 @@ int enq_output(uart_ctx_t* ctx, dthread_t* self,
     }
 }
 
-
+    
 // thread main!
 int uart_unix_main(void* arg)
 {
@@ -875,15 +952,17 @@ int uart_unix_main(void* arg)
     ErlDrvTermData mp_from;
     ErlDrvTermData mp_ref;
     dthread_t*     mp_source;
+    int tmo;
     int r;
-
-    dthread_set_debug(3);
 
     DEBUGF("uart_unix: thread started");
 
     uart_init(&ctx, self, other);
 
     dterm_init(&term);
+
+again_tmo:
+    tmo = next_timeout(&ctx);
 again:
     nev = 0;
     evp = NULL;
@@ -900,11 +979,12 @@ again:
 	}
     }
 
-    r = dthread_poll(self, evp, &nev, -1);
+    DEBUGF("uart_unix_main: timeout = %d", tmo);
+    r = dthread_poll(self, evp, &nev, tmo);
 
     if (r < 0) {
 	DEBUGF("uart_unix_main: dthread_poll failed=%d", r);
-	goto again;
+	goto again_tmo;
     }
     else {
 	DEBUGF("uart_unix_main: r=%d", r);
@@ -916,6 +996,14 @@ again:
 		while((process_input(&ctx, self, 0) == 1) && 
 		      (ctx.option.active != UART_PASSIVE))
 		    ;
+	    }
+	}
+	tmo = next_timeout(&ctx);
+	DEBUGF("uart_unix_main: timeout = %d", tmo);
+	if (ctx.recv) {
+	    if (tmo == 0) {
+		uart_async_error(&ctx, ctx.dport, ctx.caller, am_timeout);
+		clear_timeout(&ctx);
 	    }
 	}
 	if (r == 0)
@@ -976,21 +1064,21 @@ again:
 	    goto again;
 
 	case UART_CMD_RECV: {  // <<Time:32, Length:32>> Time=0xffffffff=inf
-	    uint32_t tmo;
+	    uint32_t tm;
 	    int len;
 	    if (ctx.fd < 0) goto ebadf;
-	    if (ctx.ib.remain) goto ealready;
+	    if (ctx.recv) goto ealready;
 	    if (mp->used != 8) goto badarg;
 	    if (ctx.option.active != UART_PASSIVE) goto badarg;
-	    tmo = get_uint32((uint8_t*) mp->buffer);
+	    tm = get_uint32((uint8_t*) mp->buffer);
 	    len = (int) get_uint32((uint8_t*) (mp->buffer+4));
 	    if ((len < 0) || (len > UART_MAX_PACKET_SIZE)) goto badarg;
 	    ctx.ref = mp_ref;
 	    ctx.caller = mp_from;
-	    ctx.itmo = tmo;  // FIXME: process timeout
-	    ctx.recv = 1;    // We are process sync recv
+	    set_timeout(&ctx, tm);
+	    DEBUGF("recv timeout %lu", tm);
 	    process_input(&ctx, self, len);
-	    goto again;
+	    goto again_tmo;
 	}
 
 	case UART_CMD_UNRECV: {  // argument is data to push back

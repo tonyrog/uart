@@ -12,7 +12,13 @@
 tty(a) ->
     "/dev/tty.usbserial-FTF5DP2J";
 tty(b) ->
-    "/dev/tty.usbserial-FTFBXORB".
+    "/dev/tty.usbserial-FTFBXORB";
+tty(pty) ->
+    "pty";
+tty(Name) when is_list(Name) ->
+    Name.
+
+
 
 options() ->
     {ok,A} = open(a),
@@ -35,9 +41,29 @@ options() ->
 %%   {header,  0,1,2,3,4,7,12,13}
 %%
 run() ->
-    encode_decode(),
+    run(ab).
+
+run(ab) ->
+    encode_test(),
     {ok,A} = open(a),
     {ok,B} = open(b),
+    run_ab(A,B),
+    uart:close(A),
+    uart:close(B),
+    ok.
+
+run_pty() ->
+    encode_test(),
+    {ok,A} = open(pty),
+    {ok,TTY} = uart:getopt(A, device),
+    {ok,B} = open(TTY),
+    run_ab(A,B),
+    uart:close(A),
+    uart:close(B),
+    ok.    
+
+    
+run_ab(A,B) ->
     transfer_test(A,B,[{mode,list},{active,false}]),
     transfer_test(A,B,[{mode,list},{active,true}]),
     transfer_test(A,B,[{mode,list},{active,once}]),
@@ -45,8 +71,6 @@ run() ->
     transfer_test(A,B,[{mode,binary},{active,true}]),
     transfer_test(A,B,[{mode,binary},{active,once}]),
     %% modem_test(A, B),
-    uart:close(A),
-    uart:close(B),
     ok.
 
 open(X) ->
@@ -277,11 +301,10 @@ match_pins(A, B, SetA,ClrA, MatchB) ->
     true = (lists:sort(MatchB) =:= lists:sort(BPins -- [ri,dtr,rts])).
 
 %%
-%% TEST 
-%%   options encode/decode
+%% Test encoding of options
 %%
 
-encode_decode() ->
+encode_test() ->
     Success =
 	[{device,"COM1:"},
 	 {ibaud, 0}, {ibaud, 19200}, {ibaud, 115200},

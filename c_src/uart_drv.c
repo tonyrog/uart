@@ -97,7 +97,9 @@ static ErlDrvSSizeT ctl_reply(int rep, char* buf, ErlDrvSizeT len,
     char* ptr;
 
     if ((len+1) > rsize) {
-	ptr = driver_alloc(len+1);
+	// do not used DALLOC since emulator will release it!
+	if ((ptr = driver_alloc(len+1)) == NULL)
+	    return -1;
 	*rbuf = ptr;
     }
     else
@@ -114,9 +116,8 @@ static ErlDrvSSizeT ctl_reply(int rep, char* buf, ErlDrvSizeT len,
 static int uart_drv_init(void)
 {
     DEBUGF("uart_driver_init");
-
-    dterm_lib_init();
     dthread_lib_init();
+    dlib_set_debug(DLOG_DEBUG);
 
     INIT_ATOM(dtr);
     INIT_ATOM(rts);
@@ -190,6 +191,7 @@ static int uart_drv_init(void)
 static void uart_drv_finish(void)
 {
     // cleanup global stuff!
+    dthread_lib_finish();
 }
 
 #ifdef HAVE_FTDI
@@ -208,8 +210,9 @@ static ErlDrvData uart_drv_start(ErlDrvPort port, char* command)
     (void) command;
     drv_ctx_t* ctx = NULL;
 
-    ctx = driver_alloc(sizeof(drv_ctx_t));
-    memset(ctx, 0, sizeof(drv_ctx_t));
+    INFOF("memory allocated: %ld", dlib_allocated());
+
+    ctx = DZALLOC(sizeof(drv_ctx_t));
 
     dthread_init(&ctx->self, port);
 
@@ -241,7 +244,7 @@ static ErlDrvData uart_drv_start(ErlDrvPort port, char* command)
     }
     if (ctx->other == NULL) {
 	dthread_finish(&ctx->self);
-	driver_free(ctx);
+	DFREE(ctx);
 	return ERL_DRV_ERROR_BADARG;
     }
 
@@ -265,7 +268,8 @@ static void uart_drv_stop(ErlDrvData d)
 
     DEBUGF("uart_drv_stop: dthread_finish");
     dthread_finish(&ctx->self);
-    driver_free(ctx);
+    DFREE(ctx);
+    INFOF("memory allocated: %ld", dlib_allocated());
 }
 
 #ifdef DEBUG

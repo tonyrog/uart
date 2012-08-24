@@ -3,24 +3,6 @@
 //
 #include "uart_drv.h"
 
-char* format_hex(uint8_t* ptr, int len, char* dst, int dst_len)
-{
-    char* dst0 = (char*) dst;
-    const char* hex = "0123456789ABCDEF";
-
-    while(len--) {
-	if (dst_len > 2) {
-	    *dst++ = hex[(*ptr >> 4) & 0xF];
-	    *dst++ = hex[*ptr & 0xF];
-	    dst_len -= 2;
-	}
-	ptr++;
-    }
-    *dst++ = '\0';
-    return dst0;
-}
-
-
 void uart_buf_init(uart_buf_t* bf)
 {
     memset(bf, 0, sizeof(uart_buf_t));
@@ -29,7 +11,7 @@ void uart_buf_init(uart_buf_t* bf)
 void uart_buf_finish(uart_buf_t* bf)
 {
     if (bf->base != NULL)
-	driver_free(bf->base);
+	DFREE(bf->base);
     uart_buf_init(bf);
 }
 
@@ -45,7 +27,7 @@ int uart_buf_alloc(uart_buf_t* bf, size_t bsize, size_t remain)
     uint8_t* base;
     size_t sz = remain ? remain : bsize;
 
-    if ((base = driver_alloc(sz)) == NULL)
+    if ((base = DALLOC(sz)) == NULL)
 	return -1;
     bf->sz        = sz;
     bf->base      = base;
@@ -74,7 +56,7 @@ int uart_buf_expand(uart_buf_t* bf, size_t len)
     offs1 = bf->ptr_start - bf->base;
     offs2 = bf->ptr - bf->ptr_start;
 
-    if ((base = driver_realloc(bf->base, ulen)) == NULL)
+    if ((base = DREALLOC(bf->base, ulen)) == NULL)
 	return -1;
 
     bf->base      = base;
@@ -115,12 +97,12 @@ int uart_buf_push(uart_buf_t* bf, char* buf, int len)
 	    bf->ptr_start -= len;
 	}
 	else {
-	    uint8_t* base = driver_alloc(bf->sz+len);
+	    uint8_t* base = DALLOC(bf->sz+len);
 	    if (base != NULL)
 		return -1;
 	    memcpy(base, buf, len);
 	    memcpy(base+len, bf->ptr_start, sz_filled);
-	    driver_free(bf->base);
+	    DFREE(bf->base);
 	    bf->sz += len;
 	    bf->base = base;
 	    bf->ptr_start = base;

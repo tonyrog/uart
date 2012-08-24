@@ -321,7 +321,9 @@ typedef struct _uart_ctx_t
 
     uart_queue_t   oq;          // Output queue 
     uart_buf_t     ib;          // Input buffer 
-    uint32_t       itmo;        // Input timeout (ms)
+    ErlDrvNowData  t0;          // point at start of operations
+    ErlDrvNowData* tp;         //  if tmo then point to t0!
+    uint32_t       tmo;        //  timeout value in (ms)
 } uart_ctx_t;
 
 extern void com_state_dump(FILE* f, uart_com_state_t* state);
