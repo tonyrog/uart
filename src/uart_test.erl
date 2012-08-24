@@ -50,7 +50,9 @@ run(ab) ->
     run_ab(A,B),
     uart:close(A),
     uart:close(B),
-    ok.
+    ok;
+run(pty) ->
+    run_pty().
 
 run_pty() ->
     encode_test(),

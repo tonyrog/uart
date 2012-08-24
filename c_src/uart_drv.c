@@ -117,7 +117,7 @@ static int uart_drv_init(void)
 {
     DEBUGF("uart_driver_init");
     dthread_lib_init();
-    dlib_set_debug(DLOG_DEBUG);
+    dlib_set_debug(DLOG_NONE); // (DLOG_DEBUG)
 
     INIT_ATOM(dtr);
     INIT_ATOM(rts);
