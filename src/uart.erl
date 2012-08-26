@@ -407,6 +407,8 @@ recv_(Uart, Length, Timeout) when
     case async_recv(Uart, Length, Timeout) of
 	{ok, Ref} ->
 	    receive
+		{Ref, Result} ->
+		    Result;
 		{uart_async, Uart, Ref, Data} when is_list(Data) ->
 		    {ok,Data};
 		{uart_async, Uart, Ref, Data} when is_binary(Data) ->

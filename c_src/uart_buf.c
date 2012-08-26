@@ -19,13 +19,11 @@ void uart_buf_reset(uart_buf_t* bf)
 {
     bf->ptr_start = bf->base;
     bf->ptr       = bf->base;
-    bf->remain    = 0;
 }
 
-int uart_buf_alloc(uart_buf_t* bf, size_t bsize, size_t remain)
+int uart_buf_alloc(uart_buf_t* bf, size_t sz)
 {
     uint8_t* base;
-    size_t sz = remain ? remain : bsize;
 
     if ((base = DALLOC(sz)) == NULL)
 	return -1;
@@ -33,7 +31,6 @@ int uart_buf_alloc(uart_buf_t* bf, size_t bsize, size_t remain)
     bf->base      = base;
     bf->ptr_start = base;
     bf->ptr       = base;
-    bf->remain    = remain;
     return (int) sz;
 }
 
@@ -82,14 +79,13 @@ void uart_buf_restart(uart_buf_t* bf)
 int uart_buf_push(uart_buf_t* bf, char* buf, int len)
 {
     if (bf->base == NULL) {
-	if (uart_buf_alloc(bf, len, 0) < 0)
+	if (uart_buf_alloc(bf, len) < 0)
 	    return -1;
 	memcpy(bf->base, buf, len);
 	bf->ptr = bf->ptr_start + len;
     }
     else {
-	uint8_t* start   = bf->base;
-	size_t sz_before = bf->ptr_start - start;
+	size_t sz_before = bf->ptr_start - bf->base;
 	size_t sz_filled = bf->ptr - bf->ptr_start;
 	
 	if (len <= sz_before) {
@@ -98,7 +94,7 @@ int uart_buf_push(uart_buf_t* bf, char* buf, int len)
 	}
 	else {
 	    uint8_t* base = DALLOC(bf->sz+len);
-	    if (base != NULL)
+	    if (base == NULL)
 		return -1;
 	    memcpy(base, buf, len);
 	    memcpy(base+len, bf->ptr_start, sz_filled);
@@ -106,10 +102,9 @@ int uart_buf_push(uart_buf_t* bf, char* buf, int len)
 	    bf->sz += len;
 	    bf->base = base;
 	    bf->ptr_start = base;
-	    bf->ptr = bf->ptr_start + sz_filled + len;
+	    bf->ptr = base + len + sz_filled;
 	}
     }
-    bf->remain = 0;	
     return 0;
 }
 
@@ -181,7 +176,7 @@ int uart_buf_packet(uart_buf_t* bf, unsigned int htype, unsigned max_plen,
         const uint8_t* ptr2;
         if ((ptr2 = memchr(ptr, '\n', n)) == NULL) {
             if (n >= trunc_len && trunc_len!=0) { /* buffer full */
-                DEBUGF(" => line buffer full (no NL)=%d\r\n", n);
+                DEBUGF(" => line buffer full (no NL)=%d", n);
                 return trunc_len;
             }
             goto more;
@@ -189,16 +184,16 @@ int uart_buf_packet(uart_buf_t* bf, unsigned int htype, unsigned max_plen,
         else {
             int len = (ptr2 - ptr) + 1; /* including newline */
             if (len > (int)trunc_len && trunc_len!=0) {
-                DEBUGF(" => truncated line=%d\r\n", trunc_len);
+                DEBUGF(" => truncated line=%d", trunc_len);
                 return trunc_len;
             }
-            DEBUGF(" => nothing remain packet=%d\r\n", len);
+            DEBUGF(" => nothing remain packet=%d", len);
             return len;
         }
     }
 
     default:
-        DEBUGF(" => case error\r\n");
+        DEBUGF(" => case error");
         return -1;
     }
 

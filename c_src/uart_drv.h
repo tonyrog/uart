@@ -264,14 +264,13 @@ typedef struct _uart_buf_t
     uint8_t* base;      // base buffer point
     uint8_t* ptr;       // current pos in buf 
     uint8_t* ptr_start; // packet start pos in buf 
-    int      remain;    // remaining chars to read
 } uart_buf_t;
 
 extern void uart_buf_init(uart_buf_t* bf);
 extern void uart_buf_finish(uart_buf_t* bf);
 extern void uart_buf_reset(uart_buf_t* bf);
 extern int  uart_buf_expand(uart_buf_t* bf, size_t len);
-extern int  uart_buf_alloc(uart_buf_t* bf, size_t bsize, size_t len);
+extern int  uart_buf_alloc(uart_buf_t* bf, size_t sz);
 extern void uart_buf_restart(uart_buf_t* bf);
 extern int uart_buf_push(uart_buf_t* bf, char* buf, int len);
 extern int uart_buf_packet(uart_buf_t* bf, unsigned int htype, 
@@ -312,7 +311,8 @@ typedef struct _uart_ctx_t
     uint32_t         sflags;    // flags for update state & opts
     uart_com_state_t state;     // communication params 
     uart_opt_t       option;
-    int              recv;      // ==1 if in recv 
+    int                recv;    // ==1 if in recv 
+    int              remain;    // remaining chars to read (recv)
 
     ErlDrvTermData caller;      // recipient of sync reply
 
@@ -357,7 +357,9 @@ extern int uart_error_message(uart_ctx_t* ctx, int err);
 extern int uart_reply_data(uart_ctx_t* ctx, char* buf, int len);
 extern int uart_reply_binary_data(uart_ctx_t* ctx, ErlDrvBinary* bin, int offs, int len);
 
+extern int uart_async_error_am(uart_ctx_t* ctx, ErlDrvTermData Port,
+			       ErlDrvTermData recipient, ErlDrvTermData Reason);
 extern int uart_async_error(uart_ctx_t* ctx, ErlDrvTermData Port,
-			    ErlDrvTermData recipient, ErlDrvTermData Reason);
+			    ErlDrvTermData recipient, int err);
 
 #endif

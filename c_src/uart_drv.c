@@ -115,9 +115,10 @@ static ErlDrvSSizeT ctl_reply(int rep, char* buf, ErlDrvSizeT len,
 
 static int uart_drv_init(void)
 {
+    dlib_set_debug(DLOG_DEFAULT);
     DEBUGF("uart_driver_init");
     dthread_lib_init();
-    dlib_set_debug(DLOG_NONE); // (DLOG_DEBUG)
+    dlib_set_debug(DLOG_DEFAULT);
 
     INIT_ATOM(dtr);
     INIT_ATOM(rts);
@@ -211,6 +212,7 @@ static ErlDrvData uart_drv_start(ErlDrvPort port, char* command)
     drv_ctx_t* ctx = NULL;
 
     INFOF("memory allocated: %ld", dlib_allocated());
+    INFOF("total memory allocated: %ld", dlib_total_allocated());
 
     ctx = DZALLOC(sizeof(drv_ctx_t));
 
@@ -270,9 +272,9 @@ static void uart_drv_stop(ErlDrvData d)
     dthread_finish(&ctx->self);
     DFREE(ctx);
     INFOF("memory allocated: %ld", dlib_allocated());
+    INFOF("total memory allocated: %ld", dlib_total_allocated());
 }
 
-#ifdef DEBUG
 static char* format_command(int cmd)
 {
     switch(cmd) {
@@ -293,7 +295,6 @@ static char* format_command(int cmd)
     default: return "????";
     }
 }
-#endif
 
 static ErlDrvSSizeT uart_drv_ctl(ErlDrvData d, 
 				 unsigned int cmd, char* buf, ErlDrvSizeT len,

@@ -227,7 +227,6 @@ void set_timeout(uart_ctx_t* ctx, uint32_t tmo)
     if (tmo == 0xFFFFFFFF)
 	return;
     driver_get_now(&ctx->t0);
-    ctx->recv = 1;
     ctx->tp = &ctx->t0;
     ctx->tmo = tmo;
 }
@@ -607,6 +606,7 @@ static int apply_opts(uart_ctx_t* ctx,
 	if (ctx->option.active) {
 	    if (!old_active || (ctx->option.htype != old_htype))
 		return 1;
+	    ctx->remain = 0; // CHECK ME
 	    return 0;
 	}
     }
@@ -628,7 +628,7 @@ int uart_deliver(uart_ctx_t* ctx, int len)
     /* Poll for ready packet */
     if (len == 0) {
 	/* empty buffer or waiting for more input */
-	if ((ctx->ib.base == NULL) || (ctx->ib.remain > 0))
+	if ((ctx->ib.base == NULL) || (ctx->remain > 0))
 	    return count;
 	n = uart_buf_remain(&ctx->ib, &len, ctx->option.htype,
 			    ctx->option.psize);
@@ -636,7 +636,7 @@ int uart_deliver(uart_ctx_t* ctx, int len)
 	    if (n < 0) /* packet error */
 		return n;
 	    if (len > 0)  /* more data pending */
-		ctx->ib.remain = len;
+		ctx->remain = len;
 	    return count;
 	}
     }
@@ -655,7 +655,7 @@ int uart_deliver(uart_ctx_t* ctx, int len)
 	if (ctx->ib.ptr_start == ctx->ib.ptr)
 	    uart_buf_reset(&ctx->ib);
 	else
-	    ctx->ib.remain = 0;
+	    ctx->remain = 0;
     }
 
     count++;
@@ -673,7 +673,7 @@ int uart_deliver(uart_ctx_t* ctx, int len)
 		return n;
 	    uart_buf_restart(&ctx->ib);
 	    if (len > 0)
-		ctx->ib.remain = len;
+		ctx->remain = len;
 	    len = 0;
 	}
     }
@@ -695,7 +695,7 @@ int uart_recv_closed(uart_ctx_t* ctx)
 	else {
 	    // stop_read_device(ctx);
 	}
-	uart_async_error(ctx, ctx->dport, ctx->caller, am_closed);
+	uart_async_error_am(ctx, ctx->dport, ctx->caller, am_closed);
 	DEBUGF("uart_recv_closed(%ld): passive reply all 'closed'",
 	       (long) ctx->port);
     }
@@ -713,84 +713,27 @@ int uart_recv_closed(uart_ctx_t* ctx)
     return -1;
 }
 
-/* We have a read error determine the action */
+//
+// We have a read error determine the action
+//
 int uart_recv_error(uart_ctx_t* ctx, int err)
 {
     if (err != EAGAIN) {
+	clear_timeout(ctx);
+	uart_buf_reset(&ctx->ib);
+	close_device(ctx);
+	
 	if (!ctx->option.active) {
-	    DEBUGF("uart_recv_error(%ld): cancel_timer", ctx->port);
-	    uart_buf_reset(&ctx->ib);
-	    if (ctx->option.exitf) {
-		close_device(ctx);
-	    } else {
-		// stop_read_device(ctx);
-	    }
-	    uart_async_error(ctx, ctx->dport, ctx->caller, am_closed);
-	    // async_error_am_all(ctx, error_atom(err));
-	} 
+	    uart_async_error(ctx, ctx->dport, ctx->caller, err);
+	}
 	else {
-	    uart_buf_reset(&ctx->ib);
 	    uart_error_message(ctx, err); // first error
 	    uart_closed_message(ctx);     /* then closed */
-	    if (ctx->option.exitf)
-		dthread_exit(0);   // driver_exit(ctx->port, err);
-	    else
-		close_device(ctx);
 	}
 	return -1;
     }
     return 0;
 }
-
-#if 0
-int tx_send_error(uart_ctx_t* ctx, int err)
-{
-    (void) err;
-
-    /*
-     * We used to handle "expected errors" differently from unexpected ones.
-     * Now we handle all errors in the same way. We just have to distinguish
-     * between passive and active sockets.
-     */
-    DEBUGF("tx_send_error(%ld)", (long)ctx->port);
-    if (ctx->option.active) {
-	uart_closed_message(ctx);
-	uart_reply_error_am(ctx, am_closed);
-	if (ctx->option.exitf)
-	    dthread_exit(0); // driver_exit(ctx->port, 0);
-	else
-	    close_device(ctx);
-    }
-    else {
-	clear_output(ctx);
-	uart_ibuf_reset(ctx);
-	uart_reply_error_am(ctx, am_closed);
-	close_device(ctx);
-
-	if (ctx->caller) {
-	    uart_reply_error_am(ctx, am_closed);
-	}
-	else {
-	    /* No blocking send op to reply to right now.
-	     * If next op is a send, make sure it returns {error,closed}
-	     * rather than {error,enotconn}.
-	     */
-	    ctx->flags |= UART_F_DELAYED_CLOSE_SEND;
-	}
-
-	/*
-	 * Make sure that the next receive operation gets an {error,closed}
-	 * result rather than {error,enotconn}. That means that the caller
-	 * can safely ignore errors in the send operations and handle them
-	 * in the receive operation.
-	 */
-	ctx->flags |= UART_F_DELAYED_CLOSE_RECV;
-    }
-    return -1;
-}
-#endif
-
-
 
 // process input data, buffer according to packet type
 // return 0: no packet/data delivered
@@ -804,7 +747,13 @@ int process_input(uart_ctx_t* ctx, dthread_t* self, int request_len)
     int nread;
 
     if (ctx->ib.base == NULL) {  /* allocte a read buffer */
-	nread = uart_buf_alloc(&ctx->ib,ctx->option.bsize,request_len);
+	size_t sz = ctx->option.bsize;
+	if (request_len > 0)
+	    sz = request_len;
+	if (sz == 0)
+	    sz = 1;
+	nread = uart_buf_alloc(&ctx->ib,sz);
+	ctx->remain = request_len;
 	if (nread < 0)
 	    return uart_recv_error(ctx, ENOMEM);
     }
@@ -814,10 +763,12 @@ int process_input(uart_ctx_t* ctx, dthread_t* self, int request_len)
 	    return uart_deliver(ctx, request_len);
 	else if (uart_buf_expand(&ctx->ib, request_len) < 0)
 	    return uart_recv_error(ctx, ENOMEM);
-	else
-	    ctx->ib.remain = nread = request_len - n;
+	else {
+	    nread = request_len - n;
+	    ctx->remain = nread;
+	}
     }
-    else if (ctx->ib.remain == 0) {  /* poll remain from buffer data */
+    else if ((nread=ctx->remain) == 0) {  /* poll remain from buffer data */
 	nread = uart_buf_remain(&ctx->ib, &len, 
 				ctx->option.htype,
 				ctx->option.psize);
@@ -826,10 +777,8 @@ int process_input(uart_ctx_t* ctx, dthread_t* self, int request_len)
 	else if (nread == 0)
 	    return uart_deliver(ctx, len);
 	else if (len > 0)
-	    ctx->ib.remain = len;  /* set remain */
+	    ctx->remain = len;
     }
-    else  /* remain already set use it */
-	nread = ctx->ib.remain;
     
     DEBUGF("uart_recv(%ld): s=%ld about to read %d bytes...",
 	   (long)ctx->port, (long)ctx->fd, nread);
@@ -854,9 +803,9 @@ int process_input(uart_ctx_t* ctx, dthread_t* self, int request_len)
 
     DEBUGF(" => got %d bytes", n);
     ctx->ib.ptr += n;
-    if (ctx->ib.remain > 0) {
-	ctx->ib.remain -= n;
-	if (ctx->ib.remain == 0)
+    if (ctx->remain > 0) {
+	ctx->remain -= n;
+	if (ctx->remain == 0)
 	    return uart_deliver(ctx, ctx->ib.ptr - ctx->ib.ptr_start);
     }
     else {
@@ -868,7 +817,7 @@ int process_input(uart_ctx_t* ctx, dthread_t* self, int request_len)
 	else if (nread == 0)
 	    return uart_deliver(ctx, len);
 	else if (len > 0)
-	    ctx->ib.remain = len;  /* set remain */
+	    ctx->remain = len;
     }
     return 0;
 }
@@ -975,9 +924,12 @@ again:
 	    evp = &ev;
 	    nev = 1;
 	}
+	DEBUGF("ctx.fd=%d, ev.events=%d", ctx.fd, ev.events);
+
     }
 
-    DEBUGF("uart_unix_main: timeout = %d", tmo);
+    DEBUGF("uart_unix_main: nev=%d, events=%x, timeout = %d", 
+	   nev, ev.events, tmo);
     r = dthread_poll(self, evp, &nev, tmo);
 
     if (r < 0) {
@@ -985,7 +937,7 @@ again:
 	goto again_tmo;
     }
     else {
-	DEBUGF("uart_unix_main: r=%d", r);
+	DEBUGF("uart_unix_main: nev=%d, r=%d", nev, r);
 
 	if (evp && (nev == 1)) {
 	    if (evp->revents & ERL_DRV_WRITE)
@@ -1000,14 +952,16 @@ again:
 	DEBUGF("uart_unix_main: timeout = %d", tmo);
 	if (ctx.recv) {
 	    if (tmo == 0) {
-		uart_async_error(&ctx, ctx.dport, ctx.caller, am_timeout);
+		uart_async_error_am(&ctx, ctx.dport, ctx.caller, am_timeout);
 		clear_timeout(&ctx);
+		ctx.remain = 0;
 	    }
 	}
 	if (r == 0)
 	    goto again;
 
 	// r>0 (number of messages)
+	DEBUGF("about to receive message r=%d", r);
 	if ((mp = dthread_recv(self, NULL)) == NULL) {
 	    DEBUGF("uart_unix_main: message was NULL");
 	    goto again;
@@ -1064,6 +1018,7 @@ again:
 	case UART_CMD_RECV: {  // <<Time:32, Length:32>> Time=0xffffffff=inf
 	    uint32_t tm;
 	    int len;
+	    DEBUGF("uart_unix_main: RECV");
 	    if (ctx.fd < 0) goto ebadf;
 	    if (ctx.recv) goto ealready;
 	    if (mp->used != 8) goto badarg;
@@ -1074,6 +1029,7 @@ again:
 	    ctx.ref = mp_ref;
 	    ctx.caller = mp_from;
 	    set_timeout(&ctx, tm);
+	    ctx.recv = 1;
 	    DEBUGF("recv timeout %lu", tm);
 	    process_input(&ctx, self, len);
 	    dmessage_free(mp);
@@ -1082,9 +1038,12 @@ again:
 
 	case UART_CMD_UNRECV: {  // argument is data to push back
 	    uart_buf_push(&ctx.ib, mp->buffer, mp->used);
-	    while((process_input(&ctx, self, 0) == 1) && 
-		  (ctx.option.active != UART_PASSIVE))
-		;
+	    DEBUGF("unrecived %d bytes", ctx.ib.ptr - ctx.ib.ptr_start);
+	    if (ctx.option.active != UART_PASSIVE) {
+		while((process_input(&ctx, self, 0) == 1) && 
+		      (ctx.option.active != UART_PASSIVE))
+		    ;
+	    }
 	    goto ok;
 	}
 

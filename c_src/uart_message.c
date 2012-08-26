@@ -21,7 +21,7 @@ static ErlDrvTermData error_atom(int err)
 /* send message:
 **     {uart_async, Port, Ref, ok} 
 */
-int uart_async_ok(uart_ctx_t* ctx,ErlDrvTermData Port,ErlDrvTermData recipient)
+int uart_async_ok(uart_ctx_t* ctx,ErlDrvTermData port,ErlDrvTermData recipient)
 {
     dterm_t t;
     dterm_mark_t m;
@@ -30,7 +30,7 @@ int uart_async_ok(uart_ctx_t* ctx,ErlDrvTermData Port,ErlDrvTermData recipient)
     dterm_init(&t);
     dterm_tuple_begin(&t, &m); {
 	dterm_atom(&t, am_uart_async);
-	dterm_port(&t, Port);
+	dterm_port(&t, port);
 	dterm_uint(&t, ctx->ref);
 	dterm_atom(&t, am_ok);
     }
@@ -40,12 +40,12 @@ int uart_async_ok(uart_ctx_t* ctx,ErlDrvTermData Port,ErlDrvTermData recipient)
     dterm_finish(&t);
     return r;
 }
-
-/* send message:
-**      {uart_async, Port, Ref, {error,Reason}}
-*/
-int uart_async_error(uart_ctx_t* ctx, ErlDrvTermData Port,
-		     ErlDrvTermData recipient, ErlDrvTermData Reason)
+//
+// send message:
+//      {uart_async, port, Ref, {error,Reason}}
+//
+int uart_async_error_am(uart_ctx_t* ctx, ErlDrvTermData port,
+			ErlDrvTermData recipient, ErlDrvTermData Reason)
 {
     dterm_t t;
     dterm_mark_t m;
@@ -55,7 +55,7 @@ int uart_async_error(uart_ctx_t* ctx, ErlDrvTermData Port,
     dterm_tuple_begin(&t, &m); { 
 	dterm_mark_t m1;
 	dterm_atom(&t, am_uart_async);
-	dterm_port(&t, Port);
+	dterm_port(&t, port);
 	dterm_uint(&t,  ctx->ref);
 	dterm_tuple_begin(&t, &m1); { 
 	    dterm_atom(&t, am_error);
@@ -70,67 +70,11 @@ int uart_async_error(uart_ctx_t* ctx, ErlDrvTermData Port,
     return r;
 }
 
-/* send:
-**   {uart_reply, S, ok} 
-*/
+int uart_async_error(uart_ctx_t* ctx, ErlDrvTermData port,
+		     ErlDrvTermData recipient, int err)
 
-int uart_reply_ok(uart_ctx_t* ctx)
 {
-    dterm_t t;
-    dterm_mark_t m;
-    int r;
-    ErlDrvTermData caller = ctx->caller;
-    ctx->caller = 0;
-
-    dterm_init(&t);
-    dterm_tuple_begin(&t, &m); {
-	dterm_atom(&t, am_uart_reply);
-	dterm_port(&t, ctx->dport);	
-	dterm_atom(&t, am_ok);
-    } 
-    dterm_tuple_end(&t, &m);
-
-    r = dthread_port_send_dterm(ctx->other, ctx->self, caller, &t);
-    dterm_finish(&t);
-    return r;
-}
-
-//
-//   {uart_reply, S, {error, Reason}} 
-//
-int uart_reply_error_am(uart_ctx_t* ctx, ErlDrvTermData reason)
-{
-    dterm_t t;
-    dterm_mark_t m;
-    int r;
-    ErlDrvTermData caller = ctx->caller;
-    ctx->caller = 0;
-
-    dterm_init(&t);
-    dterm_tuple_begin(&t, &m); {
-	dterm_mark_t m1;
-
-	dterm_atom(&t, am_uart_reply);
-	dterm_port(&t, ctx->dport);
-	dterm_tuple_begin(&t, &m1); {    
-	    dterm_atom(&t, am_error);
-	    dterm_atom(&t, reason);
-	}
-	dterm_tuple_end(&t, &m1);
-    }
-    dterm_tuple_end(&t, &m);
-    r = dthread_port_send_dterm(ctx->other, ctx->self, caller, &t);
-    dterm_finish(&t);
-    return r;
-}
-
-//
-//   {uart_reply, S, {error, Reason}} 
-//
-
-int uart_reply_error(uart_ctx_t* ctx, int err)
-{
-    return uart_reply_error_am(ctx, error_atom(err));
+    return uart_async_error_am(ctx, port, recipient, error_atom(err));
 }
 
 // 
@@ -352,7 +296,6 @@ int uart_async_binary_data(uart_ctx_t* ctx,
     dterm_finish(&t);
     return r;
 }
-
 
 int uart_reply_data(uart_ctx_t* ctx, char* buf, int len)
 {
