@@ -10,9 +10,19 @@
 -compile(export_all).
 
 tty(a) ->
-    "/dev/tty.usbserial-FTF5DP2J";
+    case os:type() of
+	{unix,darwin} ->
+	    "/dev/tty.usbserial-FTF5DP2J";
+	{unix,linux} ->
+	    "/dev/ttyUSB0"
+    end;
 tty(b) ->
-    "/dev/tty.usbserial-FTFBXORB";
+    case os:type() of
+	{unix,darwin} ->
+	    "/dev/tty.usbserial-FTFBXORB";
+	{unix,linux} ->
+	    "/dev/ttyUSB1"
+    end;
 tty(pty) ->
     "pty";
 tty(Name) when is_list(Name) ->
