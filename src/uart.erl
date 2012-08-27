@@ -1,7 +1,7 @@
 %%% @author Tony Rogvall <tony@rogvall.se>
 %%% @copyright (C) 2012, Tony Rogvall
 %%% @doc
-%%%    interface to uart devices
+%%%    interface to tty devices
 %%% @end
 %%% Created : 29 Jan 2012 by Tony Rogvall <tony@rogvall.se>
 
@@ -151,7 +151,10 @@ options() ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%%   Open a serial device.
+%%   Open a tty device.
+%%   The device name "pty" is reserved for opening a pseudo terminal
+%%   using the openpty call. The slave device is accessed through the
+%%   device option. See setopt for description of options.
 %% @end
 %%--------------------------------------------------------------------
 -spec open(DeviceName::iolist(), Options::[{uart_option(),term()}]) ->
@@ -168,9 +171,14 @@ open(DeviceName, Opts) ->
 		    true -> Driver ++ " ftdi";
 		    false -> Driver ++ " " ++ atom_to_list(Type)
 		end,
+	    DeviceName1 = if Type =:= win32 ->
+				  "\\\\.\\"++DeviceName;
+			     true ->
+				  DeviceName
+			  end,
 	    Opts1 = proplists:delete(ftdi, Opts),
 	    Uart = erlang:open_port({spawn_driver, Command}, [binary]),
-	    Opts2 = [{ibaud,9600},{device,DeviceName} | Opts1],
+	    Opts2 = [{ibaud,9600},{device,DeviceName1} | Opts1],
 	    case setopts(Uart, Opts2) of
 		ok ->
 		    {ok,Uart};
@@ -186,7 +194,7 @@ open(DeviceName, Opts) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%%   Close a serial device.
+%%   Close a tty device.
 %% @end
 %%--------------------------------------------------------------------
 
@@ -234,6 +242,37 @@ getopts(Uart, Opts) when ?is_uart(Uart), is_list(Opts) ->
 %%--------------------------------------------------------------------
 %% @doc
 %%   Set single option.
+%%   The following options are available:
+%%   {device, NameString}
+%%   {ibaud, Rate}
+%%   {obaud, Rate}
+%%   {baud, Rate}
+%%   {csize, CSize}
+%%   {bufsz, Size}
+%%   {buftm, Size}
+%%   {stopb, Stopb}
+%%   {parity, Parity}
+%%   {iflow,  Flow}
+%%   {oflow,  Flow}
+%%   {xonchar,  Char}
+%%   {xoffchar, Char}
+%%   {eolchar,  Char}
+%%   {active, true | false | once}
+%%   {delay_send, boolean()}
+%%   {header, Size}
+%%   {packet, PacketType}
+%%       PacketType is one of:
+%%       0
+%%       1,2,3,4,5,6,7,8   
+%%      -1,-2,-3,-4,-5,-6,-7,-8
+%%      line
+%%      {size,N}  N in range 0 .. 65535
+%%   {packet_size, Integer}
+%%   {deliver, port | term}
+%%   {mode,    list | binary}
+%%   {buffer,  BufferSize}
+%%   {exit_on_close, boolean()}
+%%
 %% @end
 %%--------------------------------------------------------------------
 -spec setopt(Uart::uart(), Option::uart_option(), Value::term()) ->
@@ -372,7 +411,7 @@ async_send(Port, Data) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%%   Push back data onto the receice buffer
+%%   Push back data onto the receive buffer
 %% @end
 %%--------------------------------------------------------------------
 -spec unrecv(Uart::uart(), Data::iolist()) ->
@@ -439,6 +478,7 @@ async_recv(Uart, Length) ->
 %%   a timeout the async_recv can be useful.
 %%   ```{ok,Ref} = uart:async_recv(Uart, 16, 1000),
 %%      receive 
+%%        {Ref,{error,Reason}} -> {error,Reason}
 %%        {uart_async,Uart,Ref,{ok,Data}} -> {ok,Data};
 %%        {uart_async,Uart,Ref,{error,Reason}} -> {error,Reason};
 %%        {'EXIT',Uart,_Reason} -> {error,closed}
@@ -509,9 +549,7 @@ translate_getopts_reply([_Opt|Opts],[V|Vs]) ->
 translate_getopts_reply([],[]) ->
     [].
 
-%% @doc
-%%    Encode UART option
-%% @end
+
 -spec encode_opt(Option::atom(),Value::term()) -> 
 			ok | {ok,any()} | {error,any()}.
 

@@ -14,20 +14,23 @@ tty(a) ->
 	{unix,darwin} ->
 	    "/dev/tty.usbserial-FTF5DP2J";
 	{unix,linux} ->
-	    "/dev/ttyUSB0"
+	    "/dev/ttyUSB0";
+	{win32,_} ->
+	    "COM10"
     end;
 tty(b) ->
     case os:type() of
 	{unix,darwin} ->
 	    "/dev/tty.usbserial-FTFBXORB";
 	{unix,linux} ->
-	    "/dev/ttyUSB1"
+	    "/dev/ttyUSB1";
+	{win32,_} ->
+	    "COM11"
     end;
 tty(pty) ->
     "pty";
 tty(Name) when is_list(Name) ->
     Name.
-
 
 
 options() ->

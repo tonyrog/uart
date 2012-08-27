@@ -311,14 +311,14 @@ static int get_com_state(int fd, uart_com_state_t* com)
     // parity
     if (tio.c_cflag & PARENB) {
 	if (tio.c_iflag & PARMRK)
-	    com->parity = 3;
+	    com->parity = UART_PARITY_MARK;
 	else if (tio.c_cflag & PARODD)
-	    com->parity = 1;
+	    com->parity = UART_PARITY_ODD;
 	else
-	    com->parity = 2;
+	    com->parity = UART_PARITY_EVEN;
     }
     else
-	com->parity = 0;
+	com->parity = UART_PARITY_NONE;
     
     // stop bits
     if (tio.c_cflag & CSTOPB)
@@ -387,25 +387,25 @@ static int set_com_state(int fd, uart_com_state_t* com)
 
     // update from state
     switch(com->parity) {
-    case 0: // none
+    case UART_PARITY_NONE:
 	tio.c_iflag &= ~PARMRK;
 	tio.c_cflag &= ~PARENB;
 	break;
-    case 1: // odd 
+    case UART_PARITY_ODD: // odd 
 	tio.c_iflag &= ~PARMRK;
 	tio.c_cflag  |= PARODD;
 	tio.c_cflag |= PARENB;
 	break;
-    case 2: // even
+    case UART_PARITY_EVEN: // even
 	tio.c_iflag &= ~PARMRK;
 	tio.c_cflag &= ~PARODD;
 	tio.c_cflag |= PARENB;
 	break;
-    case 3:  // mark (FIXME)
+    case UART_PARITY_MARK:  // mark (FIXME)
 	tio.c_iflag |= PARMRK;
 	tio.c_cflag |= PARENB;
 	break;
-    case 4:  // space (FIXME) 
+    case UART_PARITY_SPACE:  // space (FIXME) 
 	tio.c_iflag &= ~PARMRK;
 	tio.c_cflag &= ~PARENB;
 	break;
@@ -1154,7 +1154,7 @@ again:
 	    int duration;
 	    if (ctx.fd < 0) goto ebadf;
 	    if (mp->used != 4) goto badarg;
-	    duration = (int) get_uint32((uint8_t*) mp->buffer);		
+	    duration = (int) get_uint32((uint8_t*) mp->buffer);
 	    if (tcsendbreak(ctx.fd, duration) < 0)
 		goto error;
 	    goto ok;

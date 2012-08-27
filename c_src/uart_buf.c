@@ -76,7 +76,7 @@ void uart_buf_restart(uart_buf_t* bf)
 }
 
 // push data into base
-int uart_buf_push(uart_buf_t* bf, char* buf, int len)
+int uart_buf_push(uart_buf_t* bf, char* buf, size_t len)
 {
     if (bf->base == NULL) {
 	if (uart_buf_alloc(bf, len) < 0)

@@ -279,4 +279,3 @@ void __cdecl _dosmaperr(unsigned long winerrno)
 }
 
 #endif  /* WIN32 && _MT && _DLL */
-

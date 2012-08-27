@@ -93,6 +93,7 @@ static inline void put_uint32(uint8_t* ptr, uint32_t v)
 #define UART_PARITY_ODD   1
 #define UART_PARITY_EVEN  2
 #define UART_PARITY_MARK  3
+#define UART_PARITY_SPACE 4
 
 #define UART_DELIVER_PORT  0
 #define UART_DELIVER_TERM  1
@@ -272,7 +273,7 @@ extern void uart_buf_reset(uart_buf_t* bf);
 extern int  uart_buf_expand(uart_buf_t* bf, size_t len);
 extern int  uart_buf_alloc(uart_buf_t* bf, size_t sz);
 extern void uart_buf_restart(uart_buf_t* bf);
-extern int uart_buf_push(uart_buf_t* bf, char* buf, int len);
+extern int uart_buf_push(uart_buf_t* bf, char* buf, size_t len);
 extern int uart_buf_packet(uart_buf_t* bf, unsigned int htype, 
 			   unsigned max_plen, unsigned trunc_len);
 extern int uart_buf_remain(uart_buf_t* bf, int* len,
@@ -300,6 +301,9 @@ typedef struct _uart_ctx_t
     OVERLAPPED       in;        // Overlapped input
     OVERLAPPED       out;       // Overlapped output
     OVERLAPPED       stat;      // Overlapped status
+    DWORD      statm;     // Status result
+    BOOLEAN    reading;
+    BOOLEAN    writing;
 #else
     int              fd;       // unix
 #endif
