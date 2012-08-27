@@ -158,7 +158,6 @@ int uart_message(uart_ctx_t* ctx, const char* buf, int len)
     DEBUGF("uart_message(%ld): len = %d", (long)ctx->port, len);
 
     dterm_init(&t);
-
     dterm_tuple_begin(&t, &m); {
 	dterm_atom(&t, am_uart);
 	dterm_port(&t, ctx->dport);
@@ -184,7 +183,6 @@ int uart_binary_message(uart_ctx_t* ctx, ErlDrvBinary* bin, int offs, int len)
     DEBUGF("uart_binary_message(%ld): len = %d", (long)ctx->port, len); 
 
     dterm_init(&t);
-
     dterm_tuple_begin(&t, &m); {
 	dterm_atom(&t, am_uart);
 	dterm_port(&t, ctx->dport);
@@ -209,7 +207,7 @@ int uart_closed_message(uart_ctx_t* ctx)
 	int r;
 
 	ctx->flags |= UART_F_CLOSE_SENT;
-
+	dterm_init(&t);
 	dterm_tuple_begin(&t, &m); {
 	    dterm_atom(&t, am_uart_closed);
 	    dterm_port(&t, ctx->dport);
@@ -233,7 +231,8 @@ int uart_error_message(uart_ctx_t* ctx, int err)
     int r;
 
     DEBUGF("uart_error_message(%ld): %d", (long)ctx->port, err); 
-
+    
+    dterm_init(&t);
     dterm_tuple_begin(&t, &m); {
 	dterm_atom(&t, am_uart_error);
 	dterm_port(&t, ctx->dport);
@@ -257,7 +256,6 @@ int uart_async_data(uart_ctx_t* ctx, const char* buf, int len)
     DEBUGF("uart_async_data(%ld): len = %d", (long)ctx->port, len);
 
     dterm_init(&t);
-
     dterm_tuple_begin(&t, &m); {
 	dterm_atom(&t, am_uart_async);
 	dterm_port(&t, ctx->dport);
@@ -284,7 +282,6 @@ int uart_async_binary_data(uart_ctx_t* ctx,
     DEBUGF("uart_async_binary_data(%ld): len = %d", (long)ctx->port, len);
 
     dterm_init(&t);
-
     dterm_tuple_begin(&t, &m); {
 	dterm_atom(&t, am_uart_async);
 	dterm_port(&t, ctx->dport);

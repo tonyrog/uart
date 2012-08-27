@@ -323,6 +323,8 @@ static void uart_drv_output(ErlDrvData d, char* buf, ErlDrvSizeT len)
     dthread_output(ctx->other, &ctx->self, buf, len);
 }
 
+// NOTE: when SMP is enabled the messages go straight to the caller
+// This code is here to allow non SMP emulator with the same code base.
 static void uart_drv_ready_input(ErlDrvData d, ErlDrvEvent e)
 {
     drv_ctx_t* ctx = (drv_ctx_t*) d;

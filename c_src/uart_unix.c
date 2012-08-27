@@ -515,6 +515,7 @@ static int set_modem_state(int fd, uart_modem_state_t state, int on)
 static int uart_final(uart_ctx_t* ctx)
 {
     uart_buf_finish(&ctx->ib);
+    // uart_queue_clear(&ctx->oq);
     return 0;
 }
 
@@ -686,30 +687,16 @@ int uart_recv_closed(uart_ctx_t* ctx)
 {
     DEBUGF("uart_recv_closed(%ld)", (long) ctx->port);
 
+    clear_timeout(ctx);
+    uart_buf_reset(&ctx->ib);
+    close_device(ctx);
+	
     if (!ctx->option.active) {
-	uart_buf_reset(&ctx->ib);
-	if (ctx->option.exitf) {
-	    uart_queue_clear(&ctx->oq);
-	    close_device(ctx);
-	}
-	else {
-	    // stop_read_device(ctx);
-	}
 	uart_async_error_am(ctx, ctx->dport, ctx->caller, am_closed);
-	DEBUGF("uart_recv_closed(%ld): passive reply all 'closed'",
-	       (long) ctx->port);
     }
     else {
-	uart_buf_reset(&ctx->ib);
 	uart_closed_message(ctx);
-	if (ctx->option.exitf) {
-	    driver_exit(ctx->port, 0);
-	} else {
-	    // stop_read_device(ctx);
-	}
-	DEBUGF("uart_recv_closed(%ld): active close\r\n", (long) ctx->port);
     }
-    DEBUGF("uart_recv_closed(%ld): done\r\n", (long) ctx->port);
     return -1;
 }
 
@@ -1058,10 +1045,9 @@ again:
 		goto badarg;
 
 	    //  apply the changed values
-	    if ((r=apply_opts(&ctx, &state, &option, sflags)) < 0) {
-		INFOF("apply_opts: error=%s\n", strerror(errno));
-		goto badarg;
-	    }
+	    if ((r=apply_opts(&ctx, &state, &option, sflags)) < 0)
+		goto error;
+
 	    if (r == 1) {
 		while((process_input(&ctx, self, 0) == 1) && 
 		      (ctx.option.active != UART_PASSIVE))

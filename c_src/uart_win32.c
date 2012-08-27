@@ -646,30 +646,16 @@ int uart_recv_closed(uart_ctx_t* ctx)
 {
     DEBUGF("uart_recv_closed(%ld)", (long) ctx->port);
 
+    clear_timeout(ctx);
+    uart_buf_reset(&ctx->ib);
+    close_device(ctx);
+
     if (!ctx->option.active) {
-	uart_buf_reset(&ctx->ib);
-	if (ctx->option.exitf) {
-	    uart_queue_clear(&ctx->oq);
-	    close_device(ctx);
-	}
-	else {
-	    // stop_read_device(ctx);
-	}
 	uart_async_error_am(ctx, ctx->dport, ctx->caller, am_closed);
-	DEBUGF("uart_recv_closed(%ld): passive reply all 'closed'",
-	       (long) ctx->port);
     }
     else {
-	uart_buf_reset(&ctx->ib);
 	uart_closed_message(ctx);
-	if (ctx->option.exitf) {
-	    driver_exit(ctx->port, 0);
-	} else {
-	    // stop_read_device(ctx);
-	}
-	DEBUGF("uart_recv_closed(%ld): active close\r\n", (long) ctx->port);
     }
-    DEBUGF("uart_recv_closed(%ld): done\r\n", (long) ctx->port);
     return -1;
 }
 
@@ -746,7 +732,7 @@ int process_input(uart_ctx_t* ctx, dthread_t* self, size_t request_len)
 	   (long)ctx->port, (long)ctx->fh, nread);
 
     if (!ctx->reading) {
-	if (!ReadFile(ctx->fh, ctx->ib.ptr, 1, &n, &ctx->in)) {
+	if (!ReadFile(ctx->fh, ctx->rbuf, 1, &n, &ctx->in)) {
 	    if (GetLastError() != ERROR_IO_PENDING)
 		return uart_recv_error(ctx, uart_errno(ctx));
 	    ctx->reading = 1;
@@ -772,6 +758,8 @@ int process_input(uart_ctx_t* ctx, dthread_t* self, size_t request_len)
 	DEBUGF("  => detected close");
 	return uart_recv_closed(ctx);
     }
+    if (n == 1)
+	*ctx->ib.ptr = ctx->rbuf[0];
 
     DEBUGF(" => got %d bytes", n);
     ctx->ib.ptr += n;
@@ -1032,11 +1020,11 @@ again:
 	case UART_CMD_UNRECV: {  // argument is data to push back
 	    uart_buf_push(&ctx.ib, mp->buffer, mp->used);
 	    DEBUGF("unrecived %d bytes", ctx.ib.ptr - ctx.ib.ptr_start);
-	    // if (ctx.option.active != UART_PASSIVE) {
-	    //   while((process_input(&ctx, self, 0) == 1) && 
-	    //   (ctx.option.active != UART_PASSIVE))
-	    // ;
-	    // }
+	    if (ctx.option.active != UART_PASSIVE) {
+		while((process_input(&ctx, self, 0) == 1) && 
+		      (ctx.option.active != UART_PASSIVE))
+		    ;
+	    }
 	    goto ok;
 	}
 
@@ -1052,14 +1040,8 @@ again:
 
 	    //  apply the changed values
 	    if ((r=apply_opts(&ctx, &state, &option, sflags)) < 0) {
-		INFOF("apply_opts: error=%s\n", strerror(errno));
-		goto badarg;
+		goto error;
 	    }
-	    // if (r == 1) {
-	    // while((process_input(&ctx, self, 0) == 1) && 
-	    // (ctx.option.active != UART_PASSIVE))
-	    // ;
-	    // }
 	    goto ok;
 	}
 

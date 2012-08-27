@@ -286,7 +286,7 @@ typedef struct _uart_queue_t
     int            offs;     // offset in current message
     dmessage_t*    mesg;     // current message
     dmessage_t*    front;    // send from front
-    dmessage_t*    rear;     // add new to to rear    
+    dmessage_t*    rear;     // add to rear    
 } uart_queue_t;
 
 extern void uart_queue_init(uart_queue_t* q);
@@ -301,9 +301,10 @@ typedef struct _uart_ctx_t
     OVERLAPPED       in;        // Overlapped input
     OVERLAPPED       out;       // Overlapped output
     OVERLAPPED       stat;      // Overlapped status
-    DWORD      statm;     // Status result
-    BOOLEAN    reading;
-    BOOLEAN    writing;
+    DWORD            statm;     // Status result
+    BOOLEAN          reading;   // Overlapped read in progress
+    BOOLEAN          writing;   // Overlapped write in progress
+    char             rbuf[1];   // Overlapped read into this buffer
 #else
     int              fd;       // unix
 #endif
