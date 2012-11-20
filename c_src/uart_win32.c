@@ -307,7 +307,6 @@ static int get_com_state(HANDLE fh, uart_com_state_t* com)
 
     com->xonchar  = dcb.XonChar;
     com->xoffchar = dcb.XoffChar;
-    com->eolchar  = '\n';
 
     com->iflow = 0;
     if (dcb.fInX) com->iflow |= UART_SW;

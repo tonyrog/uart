@@ -111,10 +111,10 @@ int uart_buf_push(uart_buf_t* bf, char* buf, size_t len)
 // Return > 0 Total packet length.in bytes
 //        = 0 Length unknown, need more data.
 //        < 0 Error, invalid format.
-// max_plen  - Max packet length, 0=no limit
+// psize  - Max packet length, 0=no limit
 // trunc_len - Truncate (lines) if longer, 0=no limit
-int uart_buf_packet(uart_buf_t* bf, unsigned int htype, unsigned max_plen,
-		    unsigned trunc_len)
+int uart_buf_packet(uart_buf_t* bf, unsigned int htype, unsigned psize,
+		    int eol, unsigned trunc_len)
 {
     uint8_t* ptr = bf->ptr_start;
     size_t   n   = bf->ptr - bf->ptr_start;
@@ -174,8 +174,8 @@ int uart_buf_packet(uart_buf_t* bf, unsigned int htype, unsigned max_plen,
     case UART_PB_LINE_LF: {
         /* UART_PB_LINE_LF:  [Data ... \n]  */
         const uint8_t* ptr2;
-        if ((ptr2 = memchr(ptr, '\n', n)) == NULL) {
-            if (n >= trunc_len && trunc_len!=0) { /* buffer full */
+        if ((ptr2 = memchr(ptr, eol, n)) == NULL) {
+            if ((n >= trunc_len) && (trunc_len!=0)) { /* buffer full */
                 DEBUGF(" => line buffer full (no NL)=%d", n);
                 return trunc_len;
             }
@@ -203,7 +203,7 @@ more:
 remain:
     {
         int tlen = hlen + plen;
-	if ((max_plen != 0 && plen > max_plen)
+	if (((psize != 0) && (plen > psize))
 	    || tlen < (int)hlen) { /* wrap-around protection */
 	    return -1;
 	}
@@ -227,7 +227,7 @@ remain:
 **
 */
 int uart_buf_remain(uart_buf_t* bf, int* len,
-		    unsigned int htype, unsigned int psize)
+		    unsigned int htype, unsigned int psize, int eol)
 {
     uint8_t* ptr = bf->ptr_start;
     int nfill = (bf->ptr - bf->base);  // filled
@@ -235,7 +235,7 @@ int uart_buf_remain(uart_buf_t* bf, int* len,
     int n     = bf->ptr  - ptr;  // number of bytes read
     int tlen;
 
-    tlen = uart_buf_packet(bf, htype, psize, bf->sz);
+    tlen = uart_buf_packet(bf, htype, psize, eol, bf->sz);
     if (tlen > 0) {
         if (tlen <= n) { // got a packet 
             *len = tlen;

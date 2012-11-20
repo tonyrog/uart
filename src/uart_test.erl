@@ -3,6 +3,7 @@
 %%% @doc
 %%%     uart test
 %%% @end
+%%% @hidden
 %%% Created :  2 Feb 2012 by Tony Rogvall <tony@rogvall.se>
 
 -module(uart_test).
@@ -328,7 +329,8 @@ encode_test() ->
 	 {bufsz, 1}, {bufsz, 1024},
 	 {buftm, 250},
 	 {stopb, 1}, {stopb,2}, {stopb,3},
-	 {parity,none},{parity,odd},{parity,even},{parity,mark},
+	 {parity,none},{parity,odd},{parity,even},{parity,mark},{parity,space},
+	 {parity,0},{parity,1},{parity,2},{parity,3},{parity,4},
 	 {oflow,[dtr]},{oflow,[sw]},
 	 {iflow,[sw]}, {iflow,[cts]},
 	 {xonchar,$\^S},{xonchar,0},

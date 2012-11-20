@@ -43,6 +43,7 @@ int uart_get_opts(dterm_t* t, uart_ctx_t* ctx, uint8_t* ptr, size_t len)
 	    case UART_PARITY_ODD:  dterm_kv_atom(t,am_parity, am_odd); break;
 	    case UART_PARITY_EVEN: dterm_kv_atom(t,am_parity, am_even); break;
 	    case UART_PARITY_MARK: dterm_kv_atom(t,am_parity, am_mark); break;
+	    case UART_PARITY_SPACE: dterm_kv_atom(t,am_parity, am_space); break;
 	    default: dterm_kv_uint(t,am_parity,ctx->state.parity); break;
 	    }
 	    break;
@@ -76,7 +77,7 @@ int uart_get_opts(dterm_t* t, uart_ctx_t* ctx, uint8_t* ptr, size_t len)
 	    break;
 
 	case UART_OPT_EOLCHAR: 
-	    dterm_kv_uint(t,am_eolchar, ctx->state.eolchar); 
+	    dterm_kv_uint(t,am_eolchar, ctx->option.eolchar); 
 	    break;
 
 	case UART_OPT_ACTIVE:
@@ -225,7 +226,7 @@ int uart_parse_opts(char* buf, ErlDrvSizeT len,
 	case UART_OPT_OFLOW:    GET_UINT32(state->oflow); break;
 	case UART_OPT_XOFFCHAR: GET_UINT32(state->xoffchar); break;
 	case UART_OPT_XONCHAR:  GET_UINT32(state->xonchar); break;
-	case UART_OPT_EOLCHAR:  GET_UINT32(state->eolchar); break;
+	case UART_OPT_EOLCHAR:  GET_UINT32(option->eolchar); break;
 	case UART_OPT_ACTIVE:   GET_UINT32(option->active); break;
 	case UART_OPT_DELAY_SEND: GET_UINT32(option->delay_send); break;
 	case UART_OPT_DELIVER:  GET_UINT32(option->deliver); break;

@@ -1,7 +1,7 @@
 %%% @author Tony Rogvall <tony@rogvall.se>
 %%% @copyright (C) 2012, Tony Rogvall
 %%% @doc
-%%%    interface to tty devices
+%%%    Cross platform tty interface
 %%% @end
 %%% Created : 29 Jan 2012 by Tony Rogvall <tony@rogvall.se>
 
@@ -14,12 +14,12 @@
 -export([unrecv/2]).
 -export([break/2, hangup/1, flow/2]).
 -export([get_modem/1, set_modem/2, clear_modem/2]).
--export([options/0]).
+-export([options/0, validate_opts/1, validate_opt/2]).
 -export([setopt/3, setopts/2]).
 -export([getopt/2, getopts/2]).
 
--compile(export_all).  %% testing
-
+%% testing
+-export([encode_opt/2]).
 
 -define(UART_CMD_OPEN,      1).
 -define(UART_CMD_HANGUP,    2).
@@ -81,6 +81,7 @@
 -define(UART_PARITY_ODD,  1).
 -define(UART_PARITY_EVEN, 2).
 -define(UART_PARITY_MARK, 3).
+-define(UART_PARITY_SPACE, 4).
 
 -define(UART_DELIVER_PORT, 0).
 -define(UART_DELIVER_TERM, 1).
@@ -101,8 +102,13 @@
 -define(UART_SW,   16#8000).
 
 -define(bool(X), if (X) -> 1; true -> 0 end).
+
+-define(is_uint8(X),  (((X) band (bnot 16#ff)) =:= 0)).
+-define(is_uint16(X),  (((X) band (bnot 16#ffff)) =:= 0)).
+-define(is_uint32(X),  (((X) band (bnot 16#ffffffff)) =:= 0)).
+
 -define(is_uart(P),  is_port((P))).
--define(is_byte(X),  (((X) band (bnot 255)) =:= 0)).
+
 
 -type uart() :: port().
 
@@ -111,50 +117,82 @@
 	buftm | stopb | parity | iflow | oflow | xonchar |
 	xoffchar | eolchar | active | delay_send |
 	header | packet | packet_size | deliver | mode |
-	high_watermark | low_watermark | send_timeout |
-	send_timeout_close | buffer | exit_on_close.
+	buffer | exit_on_close.
+%% 	high_watermark | low_watermark | send_timeout | send_timeout_close | 
 
--type uart_input_pins()  ::  cts | dcd | ri | dcr.
+-type uart_input_pins()  ::  cts | cd | ri | dcr.
 -type uart_output_pins() ::  dtr | rts.
 -type uart_modem_pins() :: uart_input_pins() | uart_output_pins().
 
+%%--------------------------------------------------------------------
+%% @doc
+%%   List of available options:
+%%   - `{device, "pty" | string()}`
+%%   - `{ibaud, baudrate()}`
+%%   - `{obaud, baudrate()}`
+%%   - `{baud, baudrate()}'
+%%   - `{csize, 5|6|7|8}'
+%%   - `{stopb, 1|2|3}'
+%%   - `{parity,none|odd|even|mark|space}'
+%%   - `{iflow, [sw|rts|dtr]}'
+%%   - `{oflow, [sw|cts|dsr|cd]}'
+%%   - `{xonchar, byte()}'
+%%   - `{xoffchar, byte()}'
+%%   - `{eolchar, byte()}'
+%%   - `{active, true | false | once}'
+%%   - `{delay_send, boolean()}'
+%%   - `{header, size()}'
+%%   - `{packet, packet_type()}' <br/>
+%%      packet_type() ::= -8..-1|0|1..8,line,{size,0..65535}
+%%   - `{packet_size, integer()}'
+%%   - `{deliver, port | term}'
+%%   - `{mode,    list | binary}'
+%%   - `{buffer,  integer()}'
+%%   - `{exit_on_close, boolean()}'
+%%   - `{bufsz, 0..255}'    Max low level uart buffer size
+%%   - `{buftm, 0..25500}'  Inter character timeout
+%%
+%% @end
+%%--------------------------------------------------------------------
+
 options() ->
     [
-     device,          %% string()
-     baud,            %% = ibaud+obaud
-     ibaud,           %% unsigned()
-     obaud,           %% unsigned()
-     csize,           %% 5,6,7,8
-     bufsz,           %% unsigned()
-     buftm,           %% timer()  [{packet,0}]
-     stopb,           %% 1,2,3
-     parity,          %% none,odd,even,mark
-     iflow,           %% [sw,rts,dtr]
-     oflow,           %% [sw,cts,dsr,dcd]
-     xonchar,         %% byte()
-     xoffchar,        %% byte()
-     eolchar,         %% byter()
-     active,          %% true,false,once
-     delay_send,      %% boolean()
-     header,          %% unsigned()
-     packet,          %% modes()
-     packet_size,     %% unsigned()
-     deliver,         %% port | term
-     mode,            %% list | binary
-     high_watermark,
-     low_watermark,
-     send_timeout,
-     send_timeout_close,
+     device,
+     baud,
+     ibaud,
+     obaud,
+     csize,
+     bufsz,
+     buftm,
+     stopb,
+     parity,
+     iflow,
+     oflow,
+     xonchar,
+     xoffchar,
+     eolchar,
+     active,
+     delay_send,
+     header,
+     packet,
+     packet_size,
+     deliver,
+     mode,
+%%     high_watermark,
+%%     low_watermark,
+%%     send_timeout,
+%%     send_timeout_close,
      buffer,
      exit_on_close
     ].
 
 %%--------------------------------------------------------------------
-%% @doc
-%%   Open a tty device.
-%%   The device name "pty" is reserved for opening a pseudo terminal
+%% @doc Opens a tty device.
+%%
+%%   The device name `pty' is reserved for opening a pseudo terminal
 %%   using the openpty call. The slave device is accessed through the
-%%   device option. See setopt for description of options.
+%%   device option. See {@link options/0} for a description of 
+%%   available options.
 %% @end
 %%--------------------------------------------------------------------
 -spec open(DeviceName::iolist(), Options::[{uart_option(),term()}]) ->
@@ -171,14 +209,9 @@ open(DeviceName, Opts) ->
 		    true -> Driver ++ " ftdi";
 		    false -> Driver ++ " " ++ atom_to_list(Type)
 		end,
-	    DeviceName1 = if Type =:= win32 ->
-				  "\\\\.\\"++DeviceName;
-			     true ->
-				  DeviceName
-			  end,
 	    Opts1 = proplists:delete(ftdi, Opts),
 	    Uart = erlang:open_port({spawn_driver, Command}, [binary]),
-	    Opts2 = [{ibaud,9600},{device,DeviceName1} | Opts1],
+	    Opts2 = [{ibaud,9600},{device,DeviceName} | Opts1],
 	    case setopts(Uart, Opts2) of
 		ok ->
 		    {ok,Uart};
@@ -193,8 +226,7 @@ open(DeviceName, Opts) ->
     end.
 
 %%--------------------------------------------------------------------
-%% @doc
-%%   Close a tty device.
+%% @doc Close a tty device.
 %% @end
 %%--------------------------------------------------------------------
 
@@ -204,8 +236,8 @@ close(Uart) when ?is_uart(Uart) ->
     erlang:port_close(Uart).
 
 %%--------------------------------------------------------------------
-%% @doc
-%%   Get single option value.
+%% @doc Get single option value.
+%% See {@link options/0} for available options.
 %% @end
 %%--------------------------------------------------------------------
 -spec getopt(Uart::uart(), Option::uart_option()) ->
@@ -220,8 +252,7 @@ getopt(Uart, Opt) ->
     end.
 
 %%--------------------------------------------------------------------
-%% @doc
-%%   Get multiple option values.
+%% @doc Get multiple option values.
 %% @end
 %%--------------------------------------------------------------------
 
@@ -233,7 +264,6 @@ getopts(Uart, Opts) when ?is_uart(Uart), is_list(Opts) ->
     Data = << <<(encode_opt(Opt))>> || Opt <- Opts1 >>,
     case command(Uart, ?UART_CMD_GETOPTS, Data) of
 	{ok, Values} ->
-	    io:format("Options returned = ~p\n", [Values]),
 	    {ok, translate_getopts_reply(Opts,Values)};
 	Error ->
 	    Error
@@ -243,35 +273,30 @@ getopts(Uart, Opts) when ?is_uart(Uart), is_list(Opts) ->
 %% @doc
 %%   Set single option.
 %%   The following options are available:
-%%   {device, NameString}
-%%   {ibaud, Rate}
-%%   {obaud, Rate}
-%%   {baud, Rate}
-%%   {csize, CSize}
-%%   {bufsz, Size}
-%%   {buftm, Size}
-%%   {stopb, Stopb}
-%%   {parity, Parity}
-%%   {iflow,  Flow}
-%%   {oflow,  Flow}
-%%   {xonchar,  Char}
-%%   {xoffchar, Char}
-%%   {eolchar,  Char}
-%%   {active, true | false | once}
-%%   {delay_send, boolean()}
-%%   {header, Size}
-%%   {packet, PacketType}
-%%       PacketType is one of:
-%%       0
-%%       1,2,3,4,5,6,7,8   
-%%      -1,-2,-3,-4,-5,-6,-7,-8
-%%      line
-%%      {size,N}  N in range 0 .. 65535
-%%   {packet_size, Integer}
-%%   {deliver, port | term}
-%%   {mode,    list | binary}
-%%   {buffer,  BufferSize}
-%%   {exit_on_close, boolean()}
+%%   - `{device, NameString}`
+%%   - `{ibaud, baudrate()}`
+%%   - `{obaud, baudrate()}`
+%%   - `{baud, baudrate()}'
+%%   - `{csize, 5|6|7|8}'
+%%   - `{stopb, 1|2|3}'
+%%   - `{parity,none|odd|even|mark|space}'
+%%   - `{iflow, [sw|rts|dtr]}'
+%%   - `{oflow, [sw|cts,dsr,cd]}'
+%%   - `{xonchar, byte()}'
+%%   - `{xoffchar, byte()}'
+%%   - `{eolchar, byte()}'
+%%   - `{active, true | false | once}'
+%%   - `{delay_send, boolean()}'
+%%   - `{header, size()}'
+%%   - `{packet, packet_type()}' <br/>
+%% packet_type() ::= -8..-1|0|1..8,line,{size,0..65535}
+%%   - `{packet_size, integer()}'
+%%   - `{deliver, port | term}'
+%%   - `{mode,    list | binary}'
+%%   - `{buffer,  integer()}'
+%%   - `{exit_on_close, boolean()}'
+%%   - `{bufsz, 0..255}'    Max lowlevel uart buffer size
+%%   - `{buftm, 0..25500}'  Inter character timeout
 %%
 %% @end
 %%--------------------------------------------------------------------
@@ -378,7 +403,7 @@ clear_modem(Uart, Fs) when ?is_uart(Uart), is_list(Fs) ->
 -spec send(Uart::uart(), Data::iolist()) ->
 		  ok | {error, term()}.
 
-send(Port, [C]) when is_port(Port), ?is_byte(C) ->
+send(Port, [C]) when is_port(Port), ?is_uint8(C) ->
     command(Port, ?UART_CMD_SENDCHAR, [C]);
 send(Port, <<C>>) when is_port(Port) ->
     command(Port, ?UART_CMD_SENDCHAR, [C]);
@@ -395,7 +420,7 @@ send(Port, Data) when is_port(Port), is_binary(Data) ->
 -spec send_char(Uart::uart(), C::byte()) ->
 		       ok | {error, term()}.
 
-send_char(Port, C) when ?is_uart(Port), ?is_byte(C) ->
+send_char(Port, C) when ?is_uart(Port), ?is_uint8(C) ->
     command(Port, ?UART_CMD_SENDCHAR, [C]).
 
 %%--------------------------------------------------------------------
@@ -528,8 +553,75 @@ command_(Uart, Cmd, Args) ->
 	    {error, binary_to_atom(Reason,latin1)}
     end.
 
+validate_opts([{K,V}|Kvs]) ->
+    case validate_opt(K,V) of
+	true -> validate_opts(Kvs);
+	false -> {error,{type_error,K,V}};
+	undefined -> {error,{unknown_opt,K}};
+	Error -> Error
+    end;
+validate_opts([]) ->
+    ok.
+
+validate_opt(device,Arg) -> is_string(Arg);
+validate_opt(ibaud,Arg) -> is_baudrate(Arg);
+validate_opt(obaud,Arg) -> is_baudrate(Arg);
+validate_opt(baud,Arg)  -> is_baudrate(Arg);
+validate_opt(csize,Arg) -> lists:member(Arg,[5,6,7,8]);
+validate_opt(stopb,Arg) -> lists:member(Arg,[1,2,3]);
+validate_opt(parity,Arg) -> lists:member(Arg,[none,odd,even,mark,space]);
+validate_opt(iflow,Arg) -> (Arg -- [sw,rts,dtr]) =:= [];
+validate_opt(oflow,Arg) -> (Arg -- [sw,cts,dsr,cd]) =:= [];
+validate_opt(xonchar, Arg) -> is_uint8(Arg);
+validate_opt(xoffchar, Arg) -> is_uint8(Arg);
+validate_opt(eolchar, Arg) -> is_uint8(Arg);
+validate_opt(active, Arg) -> lists:member(Arg,[true,false,once]);
+validate_opt(delay_send,Arg) -> is_boolean(Arg);
+validate_opt(header, Arg) -> is_integer(Arg) andalso (Arg >= 0);
+validate_opt(packet, {size,Sz}) -> is_uint16(Sz);
+validate_opt(packet, line) -> true;
+validate_opt(packet, Arg) -> lists:member(Arg,lists:seq(-8,8));
+validate_opt(packet_size, Arg) -> is_uint32(Arg);
+validate_opt(deliver, Arg) -> lists:member(Arg,[port,term]);
+validate_opt(mode,Arg) -> lists:member(Arg,[list,binary]);
+validate_opt(buffer,Arg) -> is_uint32(Arg);
+validate_opt(exit_on_close, Arg) -> is_boolean(Arg);
+validate_opt(bufsz, Arg) -> (Arg >= 0 andalso Arg =< 255);
+validate_opt(buftm, Arg) -> (Arg >= 0 andalso Arg =< 25500);
+validate_opt(_,_Arg) -> undefined.
+
+is_baudrate(Rate) ->
+    %% only check some limit reset is implementation specific
+    is_integer(Rate) andalso (Rate > 0).
+
+is_string([C|Cs]) when ?is_uint8(C) ->
+    is_string(Cs);
+is_string([]) -> true;
+is_string(_) -> false.
+
+is_uint8(C) -> ?is_uint8(C).
+is_uint16(C) -> ?is_uint16(C).
+is_uint32(C) -> ?is_uint32(C).
+
+
 translate_set_opts([{baud,B}|Opts]) ->
     [{ibaud,B},{obaud,B}|translate_set_opts(Opts)];
+translate_set_opts([Opt={device,Name}|Opts]) ->
+    case os:type() of
+	{win32,_} ->
+	    %% Translate device name on windows to allow for device above COM9
+	    %% COM10 must be written like \\.\COM10 => "\\\\.\\COM10
+	    %% We apply this scheme for all com ports.
+	    case Name of
+		"\\\\.\\"++_Name -> %% already fixed
+		    [Opt|translate_set_opts(Opts)];
+		_ ->
+		    [{device,"\\\\.\\"++Name}|
+		     translate_set_opts(Opts)]
+	    end;
+	_ ->
+	    [Opt|translate_set_opts(Opts)]
+    end;
 translate_set_opts([Opt|Opts]) ->
     [Opt|translate_set_opts(Opts)];
 translate_set_opts([]) ->
@@ -544,6 +636,18 @@ translate_getopts([]) ->
 
 translate_getopts_reply([baud|Opts],[{ibaud,B}|Vs]) ->
     [{baud,B}|translate_getopts_reply(Opts,Vs)];
+translate_getopts_reply([device|Opts],[V={device,Name}|Vs]) ->
+    case os:type() of
+	{win32,_} ->
+	    case Name of
+		"\\\\.\\"++Name1 ->
+		    [{device,Name1}|translate_getopts_reply(Opts,Vs)];
+		_ ->
+		    [V|translate_getopts_reply(Opts,Vs)]
+	    end;
+	_ ->
+	    [V|translate_getopts_reply(Opts,Vs)]
+    end;
 translate_getopts_reply([_Opt|Opts],[V|Vs]) ->
     [V|translate_getopts_reply(Opts,Vs)];
 translate_getopts_reply([],[]) ->
@@ -592,6 +696,10 @@ encode_opt(parity,even) ->
     <<?UART_OPT_PARITY,?UART_PARITY_EVEN:32>>;
 encode_opt(parity,mark) ->
     <<?UART_OPT_PARITY,?UART_PARITY_MARK:32>>;
+encode_opt(parity,space) ->
+    <<?UART_OPT_PARITY,?UART_PARITY_SPACE:32>>;
+encode_opt(parity,P) when P >= 0, P=< 4 ->
+    <<?UART_OPT_PARITY,P:32>>;
 encode_opt(oflow,Value) when is_list(Value) ->
     <<?UART_OPT_OFLOW,(encode_flags(Value)):32>>;
 encode_opt(iflow,Value) when is_list(Value) ->
@@ -687,12 +795,3 @@ encode_flag(cd)  -> ?UART_CD;
 encode_flag(ri)  -> ?UART_RI;
 encode_flag(dsr) -> ?UART_DSR;
 encode_flag(sw) ->  ?UART_SW.
-
-decode_flags(Flags) when is_integer(Flags) ->
-    if Flags band ?UART_DTR =/= 0 -> [dtr]; true -> [] end ++
-    if Flags band ?UART_RTS =/= 0 -> [rts]; true -> [] end ++
-    if Flags band ?UART_CTS =/= 0 -> [cts]; true -> [] end ++
-    if Flags band ?UART_CD =/= 0  -> [cd]; true -> [] end ++
-    if Flags band ?UART_RI  =/= 0 -> [ri]; true -> [] end ++
-    if Flags band ?UART_DSR =/= 0 -> [dsr]; true -> [] end ++
-    if Flags band ?UART_SW  =/= 0 -> [sw]; true -> [] end.

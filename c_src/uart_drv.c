@@ -67,6 +67,7 @@ ErlDrvTermData am_none;
 ErlDrvTermData am_odd;
 ErlDrvTermData am_even;
 ErlDrvTermData am_mark;
+ErlDrvTermData am_space;
 ErlDrvTermData am_true;
 ErlDrvTermData am_false;
 ErlDrvTermData am_once;
@@ -160,6 +161,7 @@ static int uart_drv_init(void)
     INIT_ATOM(odd);
     INIT_ATOM(even);
     INIT_ATOM(mark);
+    INIT_ATOM(space);
 
     INIT_ATOM(true);
     INIT_ATOM(false);

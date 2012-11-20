@@ -341,7 +341,6 @@ static int get_com_state(int fd, uart_com_state_t* com)
     com->buftm    = tio.c_cc[VTIME]*100;
     com->xonchar  = tio.c_cc[VSTART];
     com->xoffchar = tio.c_cc[VSTOP];
-    com->eolchar  = tio.c_cc[VEOL];
 
     com->iflow = 0;
     if (tio.c_iflag & IXOFF) com->iflow |= UART_SW;
@@ -536,6 +535,7 @@ void uart_init(uart_ctx_t* ctx, dthread_t* self, dthread_t* other)
     ctx->option.deliver = UART_DELIVER_TERM; // standard term format
     ctx->option.active  = UART_PASSIVE;      // start passive
     ctx->option.exitf   = 0;
+    ctx->option.eolchar = '\n';
 
     uart_buf_init(&ctx->ib);
     uart_queue_init(&ctx->oq);
@@ -631,8 +631,10 @@ int uart_deliver(uart_ctx_t* ctx, int len)
 	/* empty buffer or waiting for more input */
 	if ((ctx->ib.base == NULL) || (ctx->remain > 0))
 	    return count;
-	n = uart_buf_remain(&ctx->ib, &len, ctx->option.htype,
-			    ctx->option.psize);
+	n = uart_buf_remain(&ctx->ib, &len, 
+			    ctx->option.htype,
+			    ctx->option.psize,
+			    ctx->option.eolchar);
 	if (n != 0) {
 	    if (n < 0) /* packet error */
 		return n;
@@ -668,7 +670,9 @@ int uart_deliver(uart_ctx_t* ctx, int len)
     }
     else if (ctx->ib.base != NULL) {
 	n = uart_buf_remain(&ctx->ib, &len,
-			    ctx->option.htype, ctx->option.psize);
+			    ctx->option.htype, 
+			    ctx->option.psize,
+			    ctx->option.eolchar);
 	if (n != 0) {
 	    if (n < 0) /* packet error */
 		return n;
@@ -758,7 +762,8 @@ int process_input(uart_ctx_t* ctx, dthread_t* self, int request_len)
     else if ((nread=ctx->remain) == 0) {  /* poll remain from buffer data */
 	nread = uart_buf_remain(&ctx->ib, &len, 
 				ctx->option.htype,
-				ctx->option.psize);
+				ctx->option.psize,
+				ctx->option.eolchar);
 	if (nread < 0)
 	    return uart_recv_error(ctx, EMSGSIZE);
 	else if (nread == 0)
@@ -798,7 +803,8 @@ int process_input(uart_ctx_t* ctx, dthread_t* self, int request_len)
     else {
 	nread = uart_buf_remain(&ctx->ib, &len, 
 				ctx->option.htype,
-				ctx->option.psize);
+				ctx->option.psize,
+				ctx->option.eolchar);
 	if (read < 0)
 	    return uart_recv_error(ctx, EMSGSIZE);
 	else if (nread == 0)

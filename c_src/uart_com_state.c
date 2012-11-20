@@ -17,7 +17,6 @@ void com_state_dump(FILE* f, uart_com_state_t* state)
     fprintf(f, "buftm: %d,", state->buftm);
     fprintf(f, "xonchar: %d,", state->xonchar);
     fprintf(f, "xoffchar: %d,", state->xoffchar);
-    fprintf(f, "eolchar: %d,", state->eolchar);
     fprintf(f, "iflow: %d,", state->iflow);
     fprintf(f, "oflow: %d,", state->oflow);
     fprintf(f, "}\r\n");
@@ -34,7 +33,6 @@ void com_state_init(uart_com_state_t* ptr)
     ptr->buftm    = 0;
     ptr->xonchar  = 17;
     ptr->xoffchar = 19;
-    ptr->eolchar  = '\n';
     ptr->iflow   = 0;
     ptr->oflow   = 0;
 }
@@ -55,5 +53,4 @@ void com_state_copy(uart_com_state_t* dst,uart_com_state_t* src,
     if (sflags & (1<<UART_OPT_OFLOW)) dst->oflow = src->oflow; 
     if (sflags & (1<<UART_OPT_XOFFCHAR)) dst->xoffchar = src->xoffchar; 
     if (sflags & (1<<UART_OPT_XONCHAR)) dst->xonchar = src->xonchar; 
-    if (sflags & (1<<UART_OPT_EOLCHAR)) dst->eolchar = src->eolchar;
 }

@@ -153,7 +153,6 @@ typedef struct {
     int buftm;       // 1  milliseconds inter character timeout
     int xonchar;     // 0
     int xoffchar;    // 0
-    int eolchar;     // 0
     int iflow;       // 0 input flow control
     int oflow;       // 0 output flow control
 } uart_com_state_t;
@@ -209,6 +208,7 @@ extern ErlDrvTermData am_none;
 extern ErlDrvTermData am_odd;
 extern ErlDrvTermData am_even;
 extern ErlDrvTermData am_mark;
+extern ErlDrvTermData am_space;
 
 extern ErlDrvTermData am_true;
 extern ErlDrvTermData am_false;
@@ -253,6 +253,7 @@ typedef struct {
     int          mode;               // LIST | BINARY
     unsigned int htype;              // header type 
     unsigned int psize;              // max packet size
+    int          eolchar;            // '\n' line delimiter
     unsigned int hsz;                // the list header size, -1 is large !!!
     unsigned int bsize;              // input buffer size (buffer)
     int          exitf;              // exit on error
@@ -275,9 +276,9 @@ extern int  uart_buf_alloc(uart_buf_t* bf, size_t sz);
 extern void uart_buf_restart(uart_buf_t* bf);
 extern int uart_buf_push(uart_buf_t* bf, char* buf, size_t len);
 extern int uart_buf_packet(uart_buf_t* bf, unsigned int htype, 
-			   unsigned max_plen, unsigned trunc_len);
+			   unsigned max_plen, int eol, unsigned trunc_len);
 extern int uart_buf_remain(uart_buf_t* bf, int* len,
-			   unsigned int htype, unsigned int psize);
+			   unsigned int htype, unsigned int psize, int eol);
 
 extern char* format_hex(uint8_t* ptr, int len, char* dst, int dst_len);
 
