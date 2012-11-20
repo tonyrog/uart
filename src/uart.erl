@@ -198,7 +198,7 @@ open(DeviceName, Opts) ->
 %% @end
 %%--------------------------------------------------------------------
 
--spec close(Uart::uart()) -> ok | {error,term()}.
+-spec close(Uart::uart()) -> true.
 
 close(Uart) when ?is_uart(Uart) ->
     erlang:port_close(Uart).
@@ -501,7 +501,9 @@ async_recv(Uart, Length) ->
 %% @end
 %%--------------------------------------------------------------------    
     
--spec async_recv(Uart::uart(), Length::non_neg_integer(), Timeout::timeout()) ->
+-spec async_recv(Uart::uart(), 
+		 Length::non_neg_integer(), 
+		 Timeout::timeout() | -1) ->
 			{ok,integer()} | {error,term()}.
 
 async_recv(Uart, Length, Time) ->
@@ -551,7 +553,7 @@ translate_getopts_reply([],[]) ->
 
 
 -spec encode_opt(Option::atom(),Value::term()) -> 
-			ok | {ok,any()} | {error,any()}.
+			binary().
 
 encode_opt(packet,0) -> 
     <<?UART_OPT_PACKET, ?UART_PB_RAW:32>>;
