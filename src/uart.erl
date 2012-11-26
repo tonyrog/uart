@@ -148,7 +148,7 @@
 %% <li> `{delay_send, boolean()}' </li>
 %% <li> `{header, size()}' </li>
 %% <li> `{packet, packet_type()}' <br/> 
-%%      ` packet_type() ::= -8..-1|0|1..8,line,{size,0..65535}' </li>
+%%      `      packet_type() ::= -8..-1|0|1..8,line,{size,0..65535}' </li>
 %% <li> `{packet_size, integer()}' </li>
 %% <li> `{deliver, port | term}' </li>
 %% <li> `{mode,    list | binary}' </li>
@@ -159,6 +159,7 @@
 %% </ul>
 %% @end
 %%--------------------------------------------------------------------
+-spec options() -> atom().
 
 options() ->
     [

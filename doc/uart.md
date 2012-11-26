@@ -239,7 +239,9 @@ available options.<a name="options-0"></a>
 ###options/0##
 
 
-`options() -> any()`
+<pre>options() -&gt; atom()</pre>
+<br></br>
+
 
 
 
