@@ -1,7 +1,7 @@
 %%% @author Tony Rogvall <tony@rogvall.se>
 %%% @copyright (C) 2012, Tony Rogvall
 %%% @doc
-%%%    Cross platform tty interface
+%%%    Cross platform tty interface.
 %%% @end
 %%% Created : 29 Jan 2012 by Tony Rogvall <tony@rogvall.se>
 
@@ -118,6 +118,8 @@
 	xoffchar | eolchar | active | delay_send |
 	header | packet | packet_size | deliver | mode |
 	buffer | exit_on_close.
+
+%%  Todo:
 %% 	high_watermark | low_watermark | send_timeout | send_timeout_close | 
 
 -type uart_input_pins()  ::  cts | cd | ri | dcr.
@@ -126,32 +128,35 @@
 
 %%--------------------------------------------------------------------
 %% @doc
-%%   List of available options:
-%%   - `{device, "pty" | string()}`
-%%   - `{ibaud, baudrate()}`
-%%   - `{obaud, baudrate()}`
-%%   - `{baud, baudrate()}'
-%%   - `{csize, 5|6|7|8}'
-%%   - `{stopb, 1|2|3}'
-%%   - `{parity,none|odd|even|mark|space}'
-%%   - `{iflow, [sw|rts|dtr]}'
-%%   - `{oflow, [sw|cts|dsr|cd]}'
-%%   - `{xonchar, byte()}'
-%%   - `{xoffchar, byte()}'
-%%   - `{eolchar, byte()}'
-%%   - `{active, true | false | once}'
-%%   - `{delay_send, boolean()}'
-%%   - `{header, size()}'
-%%   - `{packet, packet_type()}' <br/>
-%%      packet_type() ::= -8..-1|0|1..8,line,{size,0..65535}
-%%   - `{packet_size, integer()}'
-%%   - `{deliver, port | term}'
-%%   - `{mode,    list | binary}'
-%%   - `{buffer,  integer()}'
-%%   - `{exit_on_close, boolean()}'
-%%   - `{bufsz, 0..255}'    Max low level uart buffer size
-%%   - `{buftm, 0..25500}'  Inter character timeout
+%%   This function is for documentations purpose.
 %%
+%%   List of available options:
+%% <ul>
+%% <li> `{device, "pty" | string()}' </li>
+%% <li> `{ibaud, baudrate()}' </li>
+%% <li> `{obaud, baudrate()}' </li>
+%% <li> `{baud, baudrate()}' </li>
+%% <li> `{csize, 5|6|7|8}' </li>
+%% <li> `{stopb, 1|2|3}' </li>
+%% <li> `{parity,none|odd|even|mark|space}' </li>
+%% <li> `{iflow, [sw|rts|dtr]}' </li>
+%% <li> `{oflow, [sw|cts|dsr|cd]}' </li>
+%% <li> `{xonchar, byte()}' </li>
+%% <li> `{xoffchar, byte()}' </li>
+%% <li> `{eolchar, byte()}' </li>
+%% <li> `{active, true | false | once}' </li>
+%% <li> `{delay_send, boolean()}' </li>
+%% <li> `{header, size()}' </li>
+%% <li> `{packet, packet_type()}' <br/> 
+%%      ` packet_type() ::= -8..-1|0|1..8,line,{size,0..65535}' </li>
+%% <li> `{packet_size, integer()}' </li>
+%% <li> `{deliver, port | term}' </li>
+%% <li> `{mode,    list | binary}' </li>
+%% <li> `{buffer,  integer()}' </li>
+%% <li> `{exit_on_close, boolean()}' </li>
+%% <li> `{bufsz, 0..255}' - Max low level uart buffer size </li>
+%% <li> `{buftm, 0..25500}' - Inter character timeout </li>
+%% </ul>
 %% @end
 %%--------------------------------------------------------------------
 
@@ -272,32 +277,8 @@ getopts(Uart, Opts) when ?is_uart(Uart), is_list(Opts) ->
 %%--------------------------------------------------------------------
 %% @doc
 %%   Set single option.
-%%   The following options are available:
-%%   - `{device, NameString}`
-%%   - `{ibaud, baudrate()}`
-%%   - `{obaud, baudrate()}`
-%%   - `{baud, baudrate()}'
-%%   - `{csize, 5|6|7|8}'
-%%   - `{stopb, 1|2|3}'
-%%   - `{parity,none|odd|even|mark|space}'
-%%   - `{iflow, [sw|rts|dtr]}'
-%%   - `{oflow, [sw|cts,dsr,cd]}'
-%%   - `{xonchar, byte()}'
-%%   - `{xoffchar, byte()}'
-%%   - `{eolchar, byte()}'
-%%   - `{active, true | false | once}'
-%%   - `{delay_send, boolean()}'
-%%   - `{header, size()}'
-%%   - `{packet, packet_type()}' <br/>
-%% packet_type() ::= -8..-1|0|1..8,line,{size,0..65535}
-%%   - `{packet_size, integer()}'
-%%   - `{deliver, port | term}'
-%%   - `{mode,    list | binary}'
-%%   - `{buffer,  integer()}'
-%%   - `{exit_on_close, boolean()}'
-%%   - `{bufsz, 0..255}'    Max lowlevel uart buffer size
-%%   - `{buftm, 0..25500}'  Inter character timeout
 %%
+%% See {@link options/0} for available options.
 %% @end
 %%--------------------------------------------------------------------
 -spec setopt(Uart::uart(), Option::uart_option(), Value::term()) ->
@@ -425,7 +406,7 @@ send_char(Port, C) when ?is_uart(Port), ?is_uint8(C) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%%   Send asynchronous data 
+%%   Send asynchronous data.
 %% @end
 %%--------------------------------------------------------------------
 -spec async_send(Uart::uart(), Data::iolist()) -> ok.
@@ -436,7 +417,7 @@ async_send(Port, Data) ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%%   Push back data onto the receive buffer
+%%   Push back data onto the receive buffer.
 %% @end
 %%--------------------------------------------------------------------
 -spec unrecv(Uart::uart(), Data::iolist()) ->
@@ -447,7 +428,7 @@ unrecv(Port, Data) when is_list(Data); is_binary(Data)  ->
 
 %%--------------------------------------------------------------------
 %% @doc
-%%   Receive data from a device in passive mode
+%%   Receive data from a device in passive mode, no timeout.
 %% @end
 %%--------------------------------------------------------------------    
 -spec recv(Uart::uart(), Length::non_neg_integer()) ->
@@ -456,6 +437,11 @@ unrecv(Port, Data) when is_list(Data); is_binary(Data)  ->
 recv(Port, Length) ->
     recv_(Port, Length, -1).
 
+%%--------------------------------------------------------------------
+%% @doc
+%%   Receive data from a device in passive mode.
+%% @end
+%%--------------------------------------------------------------------    
 -spec recv(Uart::uart(), Length::non_neg_integer(), Timeout::timeout()) ->
 		  {ok,iolist()} | {error, term()}.
 
@@ -489,6 +475,7 @@ recv_(Uart, Length, Timeout) when
 %% @doc
 %%   Initiate an async receive operation.
 %% @end
+%%--------------------------------------------------------------------
 
 -spec async_recv(Uart::uart(), Length::non_neg_integer()) ->
 			{ok,integer()} | {error,term()}.
@@ -518,7 +505,7 @@ async_recv(Uart, Length) ->
 %%         {uart_error,Uart,Err} -> {error,Err};
 %%         {uart_closed,Uart} -> {error,close}
 %%      after Timeout ->
-%&         {error,timeout}
+%%         {error,timeout}
 %%      end'''
 %%   Packet size are however limited (to 16 bits), so any size
 %%   above 64K must be handled with async_recv or split into
@@ -535,6 +522,10 @@ async_recv(Uart, Length, Time) ->
     command_(Uart, ?UART_CMD_RECV, [<<Time:32,Length:32>>]).
 
 
+%%--------------------------------------------------------------------
+%% Internal functions    
+%%--------------------------------------------------------------------
+%% @private
 command(Uart, Cmd, Args) ->
     case command_(Uart,Cmd,Args) of
 	{ok,Ref} ->
@@ -555,6 +546,7 @@ command_(Uart, Cmd, Args) ->
 	    {error, binary_to_atom(Reason,latin1)}
     end.
 
+%% @private
 validate_opts([{K,V}|Kvs]) ->
     case validate_opt(K,V) of
 	true -> validate_opts(Kvs);
@@ -565,6 +557,7 @@ validate_opts([{K,V}|Kvs]) ->
 validate_opts([]) ->
     ok.
 
+%% @private
 validate_opt(device,Arg) -> is_string(Arg);
 validate_opt(ibaud,Arg) -> is_baudrate(Arg);
 validate_opt(obaud,Arg) -> is_baudrate(Arg);
@@ -605,7 +598,7 @@ is_uint8(C) -> ?is_uint8(C).
 is_uint16(C) -> ?is_uint16(C).
 is_uint32(C) -> ?is_uint32(C).
 
-
+%% @private
 translate_set_opts([{baud,B}|Opts]) ->
     [{ibaud,B},{obaud,B}|translate_set_opts(Opts)];
 translate_set_opts([Opt={device,Name}|Opts]) ->
@@ -655,7 +648,7 @@ translate_getopts_reply([_Opt|Opts],[V|Vs]) ->
 translate_getopts_reply([],[]) ->
     [].
 
-
+%% @private
 -spec encode_opt(Option::atom(),Value::term()) -> 
 			binary().
 
