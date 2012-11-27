@@ -440,7 +440,6 @@ transfer(A, AOpts, Data, B, BOpts, Match0) ->
     uart:setopts(A, AOpts),
     uart:setopts(B, BOpts),
     uart:send(A, Data),
-    ct:pal("Sent ~p to ~p",[Data, A]),
     Active = proplists:get_value(active,BOpts,false),
     case lists:member({packet,0}, BOpts) of
 	true ->
@@ -454,7 +453,6 @@ recv_loop(_B, _Active, []) ->
 recv_loop(_B, _Active, <<>>) ->
     true;
 recv_loop(B, true, Match) ->
-    ct:pal("recv_loop: true",[]),
     receive
 	{uart, B, Data} ->
 	    case match(Data, Match) of
@@ -467,7 +465,6 @@ recv_loop(B, true, Match) ->
 	    ct:fail(receive_timeout)
     end;
 recv_loop(B, once, Match) ->
-    ct:pal("recv_loop: once",[]),
     receive
 	{uart, B, Data} ->
 	    case match(Data, Match) of
@@ -483,10 +480,8 @@ recv_loop(B, once, Match) ->
 	    ct:fail(receive_timeout)
     end;
 recv_loop(B, false, Match) ->
-    ct:pal("recv_loop: false",[]),
     case uart:recv(B, 0, 100) of
 	{ok, Data} ->
-	    ct:pal("recv_loop: false, got ~p",[Data]),
 	    case match(Data, Match) of
 		{true,Match1} ->
 		    recv_loop(B, false, Match1);
@@ -495,7 +490,6 @@ recv_loop(B, false, Match) ->
 		    ct:fail({bad_match,Data})
 	    end;
 	Error ->
-	    ct:pal("recv_loop: false, got error ~p",[Error]),
 	    ct:fail(Error)
     end.
 

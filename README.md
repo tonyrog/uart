@@ -25,6 +25,8 @@ uart also requires the following applications to be installed:
 <li>dthread - https://github.com/tonyrog/dthread</li>
 </ul>
 
+If you use ftdi devices you can find drivers at http://ftdichip.com/.
+
 ### Downloading
 
 Clone the repository in a suitable location:
@@ -51,5 +53,28 @@ $ rebar compile
 ...
 ==> uart (compile)
 ```
+
+### Testing
+
+#### Without hardware 
+
+Basic test of uart can be done without having any dongles:
+
+```sh
+$ cd uart
+$ rebar ct
+...
+==> uart (ct)
+```
+#### With hardware 
+
+If you want to test with hardware you must configure the appropriate devices in [uart.cfg](http://github.com/tonyrog/uart/blob/master/test/uart.cfg) and then run:
+```sh
+$ cd uart/test
+$ ct_run  -spec uart_hw.spec
+...
+
+```
+
 
 
