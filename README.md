@@ -22,7 +22,7 @@ uart is built using rebar that can be found [here](https://github.com/basho/reba
 
 uart also requires the following applications to be installed:
 <ul>
-<li>dtread - https://github.com/tonyrog/dtread</li>
+<li>dthread - https://github.com/tonyrog/dthread</li>
 </ul>
 
 ### Downloading
