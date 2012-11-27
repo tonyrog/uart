@@ -43,7 +43,7 @@
 %%--------------------------------------------------------------------
 suite() ->
     [{timetrap,{minutes,10}},
-     {require, driver}].
+     {require, device}].
 
 
 %%--------------------------------------------------------------------
@@ -301,25 +301,25 @@ tty(a) ->
     case os:type() of
 	{unix,darwin} ->
 	    %% "/dev/tty.usbserial-FTF5DP2J";
-	    ct:get_config({driver, darwin, a});
+	    ct:get_config({device, darwin, a});
 	{unix,linux} ->
 	    %% "/dev/ttyUSB0";
-	    ct:get_config({driver, linux, a});
+	    ct:get_config({device, linux, a});
 	{win32,_} ->
 	    %% "COM10"
-	    ct:get_config({driver, win32, a})
+	    ct:get_config({device, win32, a})
     end;
 tty(b) ->
     case os:type() of
 	{unix,darwin} ->
 	    %% "/dev/tty.usbserial-FTFBXORB";
-	    ct:get_config({driver, darwin, b});
+	    ct:get_config({device, darwin, b});
 	{unix,linux} ->
 	    %% "/dev/ttyUSB1";
-	    ct:get_config({driver, linux, b});
+	    ct:get_config({device, linux, b});
 	{win32,_} ->
 	    %% "COM11"
-	    ct:get_config({driver, win32, b})
+	    ct:get_config({device, win32, b})
     end;
 tty(pty) ->
     "pty";

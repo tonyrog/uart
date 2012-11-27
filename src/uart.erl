@@ -469,7 +469,8 @@ recv_(Uart, Length, Timeout) when
 		{'EXIT', Uart, _Reason} ->
 		    {error, closed}
 	    end;
-	Error -> Error
+	Error -> 
+	    Error
     end.
 
 %%--------------------------------------------------------------------
