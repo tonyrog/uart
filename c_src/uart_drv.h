@@ -22,7 +22,7 @@ static inline uint16_t get_uint16(uint8_t* ptr)
     return value;
 }
 
-static inline uint16_t get_uint8(uint8_t* ptr)
+static inline uint8_t get_uint8(uint8_t* ptr)
 {
     uint8_t value = (ptr[0]<<0);
     return value;
