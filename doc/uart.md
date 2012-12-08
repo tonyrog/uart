@@ -51,8 +51,6 @@ __Authors:__ Tony Rogvall ([`tony@rogvall.se`](mailto:tony@rogvall.se)).
 <pre>uart_option() = device | baud | ibaud | obaud | csize | bufsz | buftm | stopb | parity | iflow | oflow | xonchar | xoffchar | eolchar | active | delay_send | header | packet | packet_size | deliver | mode | buffer | exit_on_close</pre>
 
 
-  	high_watermark | low_watermark | send_timeout | send_timeout_close |
-
 
 ###<a name="type-uart_output_pins">uart_output_pins()</a>##
 
@@ -69,34 +67,19 @@ Initiate an async receive operation.</td></tr><tr><td valign="top"><a href="#asy
 Initiate an async receive operation.</td></tr><tr><td valign="top"><a href="#async_send-2">async_send/2</a></td><td>
 Send asynchronous data.</td></tr><tr><td valign="top"><a href="#break-2">break/2</a></td><td>
 Send break for Duration number of milliseconds .</td></tr><tr><td valign="top"><a href="#clear_modem-2">clear_modem/2</a></td><td>
-Clear modem pins.</td></tr><tr><td valign="top"><a href="#close-1">close/1</a></td><td>Close a tty device.</td></tr><tr><td valign="top"><a href="#encode_opt-2">encode_opt/2</a></td><td></td></tr><tr><td valign="top"><a href="#flow-2">flow/2</a></td><td>
+Clear modem pins.</td></tr><tr><td valign="top"><a href="#close-1">close/1</a></td><td>Close a tty device.</td></tr><tr><td valign="top"><a href="#flow-2">flow/2</a></td><td>
 Manage input and output flow control.</td></tr><tr><td valign="top"><a href="#get_modem-1">get_modem/1</a></td><td>
 Get modem pins status.</td></tr><tr><td valign="top"><a href="#getopt-2">getopt/2</a></td><td>Get single option value.</td></tr><tr><td valign="top"><a href="#getopts-2">getopts/2</a></td><td>Get multiple option values.</td></tr><tr><td valign="top"><a href="#hangup-1">hangup/1</a></td><td>
 Hangup.</td></tr><tr><td valign="top"><a href="#open-2">open/2</a></td><td>Opens a tty device.</td></tr><tr><td valign="top"><a href="#options-0">options/0</a></td><td>
-List of available options:
-- <code>{device, "pty" | string()}`
-- `{ibaud, baudrate()}`
-- `{obaud, baudrate()}`
-- `{baud, baudrate()}</code>
-- <code>{csize, 5|6|7|8}</code>
-- <code>{stopb, 1|2|3}</code>
-- <code>{parity,none|odd|even|mark|space}</code>
-- <code>{iflow, [sw|rts|dtr]}</code>
-- <code>{oflow, [sw|cts|dsr|cd]}</code>
-- <code>{xonchar, byte()}</code>
-- <code>{xoffchar, byte()}</code>
-- <code>{eolchar, byte()}</code>
-- <code>{active, true | false | once}</code>
-- <code>{delay_send, boolean()}</code>
-- <code>{header, size()}</code>
-- <code>{packet, packet_type()}</code>.</td></tr><tr><td valign="top"><a href="#recv-2">recv/2</a></td><td>
-Receive data from a device in passive mode.</td></tr><tr><td valign="top"><a href="#recv-3">recv/3</a></td><td></td></tr><tr><td valign="top"><a href="#send-2">send/2</a></td><td>
+This function is for documentations purpose.</td></tr><tr><td valign="top"><a href="#recv-2">recv/2</a></td><td>
+Receive data from a device in passive mode, no timeout.</td></tr><tr><td valign="top"><a href="#recv-3">recv/3</a></td><td>
+Receive data from a device in passive mode.</td></tr><tr><td valign="top"><a href="#send-2">send/2</a></td><td>
 Send characters.</td></tr><tr><td valign="top"><a href="#send_char-2">send_char/2</a></td><td>
 Send a single character.</td></tr><tr><td valign="top"><a href="#set_modem-2">set_modem/2</a></td><td>
 Set modem pins.</td></tr><tr><td valign="top"><a href="#setopt-3">setopt/3</a></td><td>
 Set single option.</td></tr><tr><td valign="top"><a href="#setopts-2">setopts/2</a></td><td>
 Set multiple options.</td></tr><tr><td valign="top"><a href="#unrecv-2">unrecv/2</a></td><td>
-Push back data onto the receive buffer.</td></tr><tr><td valign="top"><a href="#validate_opt-2">validate_opt/2</a></td><td></td></tr><tr><td valign="top"><a href="#validate_opts-1">validate_opts/1</a></td><td></td></tr></table>
+Push back data onto the receive buffer.</td></tr></table>
 
 
 <a name="functions"></a>
@@ -118,7 +101,7 @@ Initiate an async receive operation.<a name="async_recv-3"></a>
 ###async_recv/3##
 
 
-<pre>async_recv(Uart::<a href="#type-uart">uart()</a>, Length::non_neg_integer(), Timeout::timeout()) -> {ok, integer()} | {error, term()}</pre>
+<pre>async_recv(Uart::<a href="#type-uart">uart()</a>, Length::non_neg_integer(), Timeout::timeout() | -1) -> {ok, integer()} | {error, term()}</pre>
 <br></br>
 
 
@@ -143,7 +126,7 @@ a fixed packet mode.
           {uart_error,Uart,Err} -> {error,Err};
           {uart_closed,Uart} -> {error,close}
        after Timeout ->
-&         {error,timeout}
+          {error,timeout}
        end</pre>
 Packet size are however limited (to 16 bits), so any size
 above 64K must be handled with async_recv or split into
@@ -157,7 +140,7 @@ chunks.<a name="async_send-2"></a>
 
 
 
-Send asynchronous data<a name="break-2"></a>
+Send asynchronous data.<a name="break-2"></a>
 
 ###break/2##
 
@@ -182,20 +165,11 @@ Clear modem pins.<a name="close-1"></a>
 ###close/1##
 
 
-<pre>close(Uart::<a href="#type-uart">uart()</a>) -> ok | {error, term()}</pre>
+<pre>close(Uart::<a href="#type-uart">uart()</a>) -> true</pre>
 <br></br>
 
 
-Close a tty device.<a name="encode_opt-2"></a>
-
-###encode_opt/2##
-
-
-<pre>encode_opt(Option::atom(), Value::term()) -&gt; ok | {ok, any()} | {error, any()}</pre>
-<br></br>
-
-
-<a name="flow-2"></a>
+Close a tty device.<a name="flow-2"></a>
 
 ###flow/2##
 
@@ -265,36 +239,66 @@ available options.<a name="options-0"></a>
 ###options/0##
 
 
-`options() -> any()`
-
-
-List of available options:
-- `{device, "pty" | string()}`
-- `{ibaud, baudrate()}`
-- `{obaud, baudrate()}`
-- `{baud, baudrate()}`
-- `{csize, 5|6|7|8}`
-- `{stopb, 1|2|3}`
-- `{parity,none|odd|even|mark|space}`
-- `{iflow, [sw|rts|dtr]}`
-- `{oflow, [sw|cts|dsr|cd]}`
-- `{xonchar, byte()}`
-- `{xoffchar, byte()}`
-- `{eolchar, byte()}`
-- `{active, true | false | once}`
-- `{delay_send, boolean()}`
-- `{header, size()}`
-- `{packet, packet_type()}` 
+<pre>options() -&gt; atom()</pre>
 <br></br>
 
-packet_type() ::= -8..-1|0|1..8,line,{size,0..65535}
-- `{packet_size, integer()}`
-- `{deliver, port | term}`
-- `{mode,    list | binary}`
-- `{buffer,  integer()}`
-- `{exit_on_close, boolean()}`
-- `{bufsz, 0..255}`    Max low level uart buffer size
-- `{buftm, 0..25500}`  Inter character timeout
+
+
+
+
+This function is for documentations purpose.
+
+List of available options:
+
+* `{device, "pty" | string()}`
+
+* `{ibaud, baudrate()}`
+
+* `{obaud, baudrate()}`
+
+* `{baud, baudrate()}`
+
+* `{csize, 5|6|7|8}`
+
+* `{stopb, 1|2|3}`
+
+* `{parity,none|odd|even|mark|space}`
+
+* `{iflow, [sw|rts|dtr]}`
+
+* `{oflow, [sw|cts|dsr|cd]}`
+
+* `{xonchar, byte()}`
+
+* `{xoffchar, byte()}`
+
+* `{eolchar, byte()}`
+
+* `{active, true | false | once}`
+
+* `{delay_send, boolean()}`
+
+* `{header, size()}`
+
+* `{packet, packet_type()}` 
+<br></br>
+
+`packet_type() ::= -8..-1|0|1..8,line,{size,0..65535}`
+
+* `{packet_size, integer()}`
+
+* `{deliver, port | term}`
+
+* `{mode,    list | binary}`
+
+* `{buffer,  integer()}`
+
+* `{exit_on_close, boolean()}`
+
+* `{bufsz, 0..255}` - Max low level uart buffer size
+
+* `{buftm, 0..25500}` - Inter character timeout
+
 <a name="recv-2"></a>
 
 ###recv/2##
@@ -305,7 +309,7 @@ packet_type() ::= -8..-1|0|1..8,line,{size,0..65535}
 
 
 
-Receive data from a device in passive mode<a name="recv-3"></a>
+Receive data from a device in passive mode, no timeout.<a name="recv-3"></a>
 
 ###recv/3##
 
@@ -314,7 +318,8 @@ Receive data from a device in passive mode<a name="recv-3"></a>
 <br></br>
 
 
-<a name="send-2"></a>
+
+Receive data from a device in passive mode.<a name="send-2"></a>
 
 ###send/2##
 
@@ -354,35 +359,11 @@ Set modem pins.<a name="setopt-3"></a>
 
 
 
-Set single option.
-The following options are available:
-- `{device, NameString}`
-- `{ibaud, baudrate()}`
-- `{obaud, baudrate()}`
-- `{baud, baudrate()}`
-- `{csize, 5|6|7|8}`
-- `{stopb, 1|2|3}`
-- `{parity,none|odd|even|mark|space}`
-- `{iflow, [sw|rts|dtr]}`
-- `{oflow, [sw|cts,dsr,cd]}`
-- `{xonchar, byte()}`
-- `{xoffchar, byte()}`
-- `{eolchar, byte()}`
-- `{active, true | false | once}`
-- `{delay_send, boolean()}`
-- `{header, size()}`
-- `{packet, packet_type()}` 
-<br></br>
 
-packet_type() ::= -8..-1|0|1..8,line,{size,0..65535}
-- `{packet_size, integer()}`
-- `{deliver, port | term}`
-- `{mode,    list | binary}`
-- `{buffer,  integer()}`
-- `{exit_on_close, boolean()}`
-- `{bufsz, 0..255}`    Max lowlevel uart buffer size
-- `{buftm, 0..25500}`  Inter character timeout
-<a name="setopts-2"></a>
+
+Set single option.
+
+See [`options/0`](#options-0) for available options.<a name="setopts-2"></a>
 
 ###setopts/2##
 
@@ -402,17 +383,4 @@ Set multiple options.<a name="unrecv-2"></a>
 
 
 
-Push back data onto the receive buffer<a name="validate_opt-2"></a>
-
-###validate_opt/2##
-
-
-`validate_opt(X1, Arg) -> any()`
-
-<a name="validate_opts-1"></a>
-
-###validate_opts/1##
-
-
-`validate_opts(Kvs) -> any()`
-
+Push back data onto the receive buffer.
