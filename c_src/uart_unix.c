@@ -985,6 +985,15 @@ again:
 	    }
 	    goto again;
 
+	case UART_CMD_CONNECT: {
+	    ErlDrvTermData owner;
+	    if (mp->used != 0) goto badarg;
+	    owner = driver_connected(self->port);
+	    self->owner   = owner;
+	    other->owner  = owner;
+	    goto ok;
+	}
+
 	case UART_CMD_CLOSE:
 	    DEBUGF("uart_unix_main: CLOSE");
 	    close_device(&ctx);

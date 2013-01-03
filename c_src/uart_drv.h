@@ -57,6 +57,7 @@ static inline void put_uint32(uint8_t* ptr, uint32_t v)
 #define UART_CMD_CLR_MODEM  14
 #define UART_CMD_UNRECV     15
 #define UART_CMD_RECV       16
+#define UART_CMD_CONNECT    17
 
 #define UART_MAX_OPT_BUFFER (64*1024)
 #define UART_DEF_BUFFER     1024

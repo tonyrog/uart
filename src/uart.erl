@@ -17,6 +17,7 @@
 -export([options/0, validate_opts/1, validate_opt/2]).
 -export([setopt/3, setopts/2]).
 -export([getopt/2, getopts/2]).
+-export([controlling_process/2]).
 
 %% testing
 -export([encode_opt/2]).
@@ -35,6 +36,7 @@
 -define(UART_CMD_CLR_MODEM, 14).
 -define(UART_CMD_UNRECV,    15).
 -define(UART_CMD_RECV,      16).
+-define(UART_CMD_CONNECT,   17).
 
 %% Option bits are also used as bit numbers, so do not exceed 32.
 -define(UART_OPT_DEVICE, 1).
@@ -523,7 +525,71 @@ async_recv(Uart, Length) ->
 async_recv(Uart, Length, Time) ->
     command_(Uart, ?UART_CMD_RECV, [<<Time:32,Length:32>>]).
 
+%%
+%% set controlling process of uart to the caller
+%%
+-spec controlling_process(Uart::uart(), NewOwner::pid()) ->
+				 ok | {error,term()}.
 
+%%--------------------------------------------------------------------
+%% @doc
+%%   Connect uart to a new controlling process, that is the process that
+%%   is the event data receiver. The caller must be the current owner of
+%%   the uart.
+%% @end
+%%--------------------------------------------------------------------
+
+%% Set controlling process for uart.
+controlling_process(U, NewOwner) when ?is_uart(U), is_pid(NewOwner) ->
+    case erlang:port_info(U, connected) of
+	{connected, NewOwner} ->
+	    ok;
+	{connected, Pid} when Pid =/= self() ->
+	    {error, not_owner};
+	undefined ->
+	    {error, einval};
+	_ ->
+	    case getopt(U, active) of
+		{ok, A0} ->
+		    setopt(U, active, false),
+		    case sync_input(U, NewOwner, false) of
+			true ->  %% uart already closed, 
+			    ok;
+			false ->
+			    try erlang:port_connect(U, NewOwner) of
+				true ->
+				    unlink(U), %% unlink from port
+				    %% make thread reconnect to port 
+				    ok = command(U, ?UART_CMD_CONNECT, []),
+				    setopt(U, active, A0),
+				    ok
+			    catch
+				error:Reason -> 
+				    {error, Reason}
+			    end
+		    end;
+		Error ->
+		    Error
+	    end
+    end.
+
+sync_input(U, Owner, Flag) ->
+    receive
+	{uart, U, Data} ->
+	    Owner ! {uart, U, Data},
+	    sync_input(U, Owner, Flag);
+	{uart_closed, U} ->
+	    Owner ! {uart_closed, U},
+	    sync_input(U, Owner, true);
+	{U, {data, Data}} ->
+	    Owner ! {U, {data, Data}},
+	    sync_input(U, Owner, Flag);	    
+	{uart_async, U, Ref, Data} ->
+	    Owner ! {uart_async, U, Ref, Data},
+	    sync_input(U, Owner, Flag)
+    after 0 -> 
+	    Flag
+    end.
 %%--------------------------------------------------------------------
 %% Internal functions    
 %%--------------------------------------------------------------------
