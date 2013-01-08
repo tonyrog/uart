@@ -18,6 +18,7 @@
 -export([setopt/3, setopts/2]).
 -export([getopt/2, getopts/2]).
 -export([controlling_process/2]).
+-export([i/0]).
 
 %% testing
 -export([encode_opt/2]).
@@ -232,6 +233,42 @@ open(DeviceName, Opts) ->
 	    io:format("Error: ~s\n", [erl_ddll:format_error_int(Error)]),
 	    Err
     end.
+
+%%--------------------------------------------------------------------
+%% @doc List information about open uart ports
+%% @end
+%%--------------------------------------------------------------------
+
+i() ->
+    Us = lists:filter(
+	   fun(P) -> 
+		   {_,Name} = erlang:port_info(P, name),
+		   lists:prefix("uart_drv ",Name)
+	   end, erlang:ports()),
+    lists:foreach(
+      fun(U) ->
+	      try fmt_(U) of
+		  Fmt ->
+		      io:put_chars([Fmt,"\n"])
+	      catch
+		  _ -> ignore
+	      end
+      end, Us).
+
+fmt_(U) ->
+    {ok,Opts} = getopts(U, [device,baud,csize,parity,stopb]),
+    {_,Connected} = erlang:port_info(U, connected),
+    io_lib:format("~s ~w ~w~s~w connected to ~p",
+		  [proplists:get_value(device,Opts),
+		   proplists:get_value(baud,Opts),
+		   proplists:get_value(csize,Opts),
+		   case proplists:get_value(parity,Opts) of
+		       none -> "N";
+		       even -> "E";
+		       odd  -> "O";
+		       mark -> "M"
+		   end, proplists:get_value(stopb,Opts),
+		   Connected]).
 
 %%--------------------------------------------------------------------
 %% @doc Close a tty device.

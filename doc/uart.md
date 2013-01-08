@@ -67,7 +67,9 @@ Initiate an async receive operation.</td></tr><tr><td valign="top"><a href="#asy
 Initiate an async receive operation.</td></tr><tr><td valign="top"><a href="#async_send-2">async_send/2</a></td><td>
 Send asynchronous data.</td></tr><tr><td valign="top"><a href="#break-2">break/2</a></td><td>
 Send break for Duration number of milliseconds .</td></tr><tr><td valign="top"><a href="#clear_modem-2">clear_modem/2</a></td><td>
-Clear modem pins.</td></tr><tr><td valign="top"><a href="#close-1">close/1</a></td><td>Close a tty device.</td></tr><tr><td valign="top"><a href="#flow-2">flow/2</a></td><td>
+Clear modem pins.</td></tr><tr><td valign="top"><a href="#close-1">close/1</a></td><td>Close a tty device.</td></tr><tr><td valign="top"><a href="#controlling_process-2">controlling_process/2</a></td><td>
+Connect uart to a new controlling process, that is the process that
+is the event data receiver.</td></tr><tr><td valign="top"><a href="#flow-2">flow/2</a></td><td>
 Manage input and output flow control.</td></tr><tr><td valign="top"><a href="#get_modem-1">get_modem/1</a></td><td>
 Get modem pins status.</td></tr><tr><td valign="top"><a href="#getopt-2">getopt/2</a></td><td>Get single option value.</td></tr><tr><td valign="top"><a href="#getopts-2">getopts/2</a></td><td>Get multiple option values.</td></tr><tr><td valign="top"><a href="#hangup-1">hangup/1</a></td><td>
 Hangup.</td></tr><tr><td valign="top"><a href="#open-2">open/2</a></td><td>Opens a tty device.</td></tr><tr><td valign="top"><a href="#options-0">options/0</a></td><td>
@@ -169,7 +171,19 @@ Clear modem pins.<a name="close-1"></a>
 <br></br>
 
 
-Close a tty device.<a name="flow-2"></a>
+Close a tty device.<a name="controlling_process-2"></a>
+
+###controlling_process/2##
+
+
+<pre>controlling_process(Uart::<a href="#type-uart">uart()</a>, NewOwner::pid()) -> ok | {error, term()}</pre>
+<br></br>
+
+
+
+Connect uart to a new controlling process, that is the process that
+is the event data receiver. The caller must be the current owner of
+the uart.<a name="flow-2"></a>
 
 ###flow/2##
 
