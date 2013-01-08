@@ -72,7 +72,7 @@ Connect uart to a new controlling process, that is the process that
 is the event data receiver.</td></tr><tr><td valign="top"><a href="#flow-2">flow/2</a></td><td>
 Manage input and output flow control.</td></tr><tr><td valign="top"><a href="#get_modem-1">get_modem/1</a></td><td>
 Get modem pins status.</td></tr><tr><td valign="top"><a href="#getopt-2">getopt/2</a></td><td>Get single option value.</td></tr><tr><td valign="top"><a href="#getopts-2">getopts/2</a></td><td>Get multiple option values.</td></tr><tr><td valign="top"><a href="#hangup-1">hangup/1</a></td><td>
-Hangup.</td></tr><tr><td valign="top"><a href="#open-2">open/2</a></td><td>Opens a tty device.</td></tr><tr><td valign="top"><a href="#options-0">options/0</a></td><td>
+Hangup.</td></tr><tr><td valign="top"><a href="#i-0">i/0</a></td><td>List information about open uart ports.</td></tr><tr><td valign="top"><a href="#open-2">open/2</a></td><td>Opens a tty device.</td></tr><tr><td valign="top"><a href="#options-0">options/0</a></td><td>
 This function is for documentations purpose.</td></tr><tr><td valign="top"><a href="#recv-2">recv/2</a></td><td>
 Receive data from a device in passive mode, no timeout.</td></tr><tr><td valign="top"><a href="#recv-3">recv/3</a></td><td>
 Receive data from a device in passive mode.</td></tr><tr><td valign="top"><a href="#send-2">send/2</a></td><td>
@@ -232,7 +232,14 @@ Get multiple option values.<a name="hangup-1"></a>
 
 
 
-Hangup<a name="open-2"></a>
+Hangup<a name="i-0"></a>
+
+###i/0##
+
+
+`i() -> any()`
+
+List information about open uart ports<a name="open-2"></a>
 
 ###open/2##
 
