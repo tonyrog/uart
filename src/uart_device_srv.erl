@@ -16,6 +16,8 @@
 -export([start_link/0]).
 -export([start/0]).
 
+-import(lists, [map/2]).
+
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
@@ -26,14 +28,17 @@
 	{
 	  name :: string(),    %% device name
 	  path :: string(),    %% device dir path
+	  id   :: string(),    %% internal node name (info)
 	  owner :: pid(),      %% owner pid
 	  mon  :: reference(), %% process monitor
 	  avail                %% true it device is (known to be) available
 	}).
 
 -record(state, {
-	  watch        :: undefined | reference(),
-	  devices = [] :: [#uart_device{}]
+	  dref         :: undefined | reference(),
+	  iref         :: undefined | reference(),
+	  devices = [] :: [#uart_device{}],
+	  sub = []     :: [{pid(),reference()}]
 	 }).
 
 %%%===================================================================
@@ -49,6 +54,12 @@ release(Name) ->
 get_list() ->
     gen_server:call(?SERVER, get_list).
 
+subscribe() ->
+    gen_server:call(?SERVER, {subscribe,self()}).
+
+unsubscribe(Ref) ->
+    gen_server:call(?SERVER, {unsubscribe,self(),Ref}).
+    
 %%--------------------------------------------------------------------
 %% @doc
 %% Starts the server
@@ -78,9 +89,11 @@ start() ->
 %% @end
 %%--------------------------------------------------------------------
 init([]) ->
-    Ref = watch_uart_devices(),
+    {DRef,IRef} = watch_uart_devices(),
     Ds  = list_uart_devices(),
-    {ok, #state{ devices = Ds, watch=Ref }}.
+    State0 = #state{ devices =[], dref=DRef, iref=IRef },
+    State1 = add_all(Ds, State0),
+    {ok, State1}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -98,6 +111,18 @@ init([]) ->
 %%--------------------------------------------------------------------
 handle_call(get_list, _From, State) ->
     {reply, {ok, [D#uart_device.name || D <- State#state.devices]}, State};
+handle_call({subscribe,Pid}, _From, State) ->
+    Ref = erlang:monitor(process,Pid),
+    Sub = [{Pid,Ref} | State#state.sub],
+    {reply,{ok,Ref},State#state { sub = Sub }};
+handle_call({unsubscribe,Pid,Ref}, _From, State) ->
+    case lists:keytake(Ref,2,State#state.sub) of
+	{value,{Pid,Ref},Sub} ->
+	    erlang:demonitor(Ref, [flush]),
+	    {reply,ok,State#state { sub = Sub }};
+	_ ->
+	    {reply,ok,State}
+    end;
 handle_call({alloc,Pid,Name}, _From, State) ->
     case lists:keytake(Name,#uart_device.name,State#state.devices) of
 	false ->
@@ -163,29 +188,105 @@ handle_cast(_Msg, State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_info({fevent,Ref,[create],Path,Name}, State) 
-  when Ref =:= State#state.watch ->
-    case is_uart_device(Path,Name) of
-	true ->
-	    D = #uart_device { name=Name, path=Path, avail=true },
-	    io:format("ADD: ~p\n", [D]),
-	    Ds = [D | State#state.devices],
-	    {noreply, State#state { devices = Ds }};
-	false ->
+  when Ref =:= State#state.dref ->
+    case os:type() of
+	{unix,darwin} ->
+	    case is_uart_device(Path,Name) of
+		true ->
+		    Ds0 = State#state.devices,
+		    case lists:keyfind(Name,#uart_device.name, Ds0) of
+			false ->
+			    State1 = add(#uart_device { 
+					    name = Name, 
+					    path = Path, 
+					    id   = Name,
+					    avail=true }, State),
+			    {noreply, State1};
+			_D ->
+			    {noreply, State}
+		    end;
+		false ->
+		    {noreply, State}
+	    end;
+	{unix,linux} ->
+	    if Name =:= "serial",
+	       State#state.devices =:= [],
+	       State#state.iref =:= undefined ->
+		    IRef = case fnotify:watch("/dev/serial/by-id") of
+			       {ok,Ref} -> Ref;
+			       {error,enoent} -> undefined
+			   end,
+		    Ds = list_uart_devices(),
+		    State1 = State#state { iref=IRef },
+		    State2 = add_all(Ds, State1),
+		    {noreply, State2};
+	       true ->
+		    {noreply, State}
+	    end
+    end;
+handle_info({fevent,Ref,[create],IPath,ID}, State) 
+  when Ref =:= State#state.iref ->
+    case os:type() of
+	{unix,linux} ->
+	    case is_uart_device(IPath,ID) of
+		true ->
+		    Link = filename:join(IPath,ID),
+		    case file:read_link(Link) of
+			{ok,Name} ->
+			    Name1=filename:basename(Name),
+			    D = #uart_device { name=Name1, 
+					       path="/dev",
+					       id=ID,
+					       avail=true },
+			    State1 = add(D, State),			 
+			    {noreply, State1};
+			Error ->
+			    io:format("read_link: error ~p\n", [Error]),
+			    {noreply, State}
+		    end;
+		false ->
+		    {noreply, State}
+	    end;
+	_ ->
 	    {noreply, State}
     end;
 handle_info({fevent,Ref,[delete],_Path,Name}, State) 
-  when Ref =:= State#state.watch ->
-    case lists:keytake(Name, #uart_device.name, State#state.devices) of
-	false ->
-	    {noreply, State};
-	{value,D,Ds} ->
-	    io:format("DELETE: ~p\n", [D]),
-	    {noreply, State#state { devices = Ds }}
+  when Ref =:= State#state.dref ->
+    case os:type() of
+	{unix,darwin} ->
+	    State1 = removed_by_name(Name, State),
+	    {noreply, State1};
+	{unix,linux} ->
+	    if Name =:= "serial" ->
+		    %% all devices still present are gone
+		    unwatch(State#state.iref),
+		    State1 = remove_all(State#state.devices,State),
+		    {noreply, State1#state { iref=undefined}};
+	       true ->
+		    {noreply, State}
+	    end;
+	_ ->
+	    {noreply, State}
     end;
-handle_info({'DOWN',Ref,process,_Pid,_Reason}, State) ->
+handle_info({fevent,Ref,[delete],_IPath,ID}, State) 
+  when Ref =:= State#state.iref ->
+    case os:type() of
+	{unix,darwin} ->
+	    State1 = removed_by_id(ID, State),
+	    {noreply, State1};
+	_ ->
+	    {noreply, State}
+    end;
+
+handle_info({'DOWN',Ref,process,Pid,_Reason}, State) ->
     case lists:keytake(Ref, #uart_device.mon, State#state.devices) of
 	false ->
-	    {noreply, State};
+	    case lists:keytake(Ref,2,State#state.sub) of
+		{value,{Pid,Ref},Sub} ->
+		    {noreply,State#state { sub = Sub }};
+		_ ->
+		    {noreply,State}
+	    end;
 	{value,D,Ds} ->
 	    D1 = D#uart_device { avail = true,
 				 owner = undefined,
@@ -234,10 +335,51 @@ list_uart_devices() ->
 	    Path = "/dev",
 	    {ok,Ds} = file:list_dir(Path),
 	    Ds1 = lists:filter(fun(D) -> is_uart_device(Path,D) end, Ds),
-	    [#uart_device { name=D, path=Path, avail=true} || D <- Ds1];
+	    map(fun(Name) ->
+			D = #uart_device { name=Name, 
+					   path=Path, 
+					   id=Name, avail=true},
+			io:format("ADD: ~p\n", [D]),
+			D
+		end, Ds1);
+	{unix,linux} ->
+	    case filelib:is_dir("/dev/serial") of
+		false ->
+		    [];
+		true ->
+		    Path = "/dev",
+		    IPath = "/dev/serial/by-id",
+		    case file:list_dir(IPath) of
+			{ok,Fs} ->
+			    Ds1=
+				lists:foldl(
+				  fun(ID,Acc) ->
+					  Link = filename:join(IPath,ID),
+					  case file:read_link(Link) of
+					      {ok,Name} ->
+						  Name1=filename:basename(Name),
+						  [{Name1,ID}|Acc];
+					      _ ->
+						  Acc
+					  end
+				  end, [], Fs),
+			    map(
+			      fun({Name,ID}) ->
+				      D=#uart_device { name=Name, 
+						       path=Path,
+						       id = ID,
+						       avail=true},
+				      io:format("ADD: ~p\n", [D]),
+				      D
+			      end, Ds1);
+			_Error -> %% /dev/serial/... may vanish!
+			    []
+		    end
+	    end;
 	_ ->
 	    []
     end.
+
 
 is_uart_device(_Path,Name) ->  %% fixme check fileinfo
     lists:prefix("tty.", Name).
@@ -245,8 +387,81 @@ is_uart_device(_Path,Name) ->  %% fixme check fileinfo
 watch_uart_devices() ->
     case os:type() of
 	{unix,darwin} ->
-	    {ok,Ref} = fnotify:watch("/dev"),
-	    Ref;
+	    {ok,DRef} = fnotify:watch("/dev"),
+	    {DRef,undefined};
+	{unix,linux} ->
+	    {ok,DRef} = fnotify:watch("/dev"),
+	    case fnotify:watch("/dev/serial/by-id") of
+		{ok,Ref} -> 
+		    {DRef,Ref};
+		{error,enoent} ->
+		    {DRef,undefined}
+	    end;
 	_ ->
-	    undefined
+	    {undefined,undefined}
     end.
+
+unwatch(undefined) ->
+    ok;
+unwatch(Ref) ->
+    fnotify:unwatch(Ref).
+
+%% device was added (USB pugged in)
+add(D,State) ->
+    io:format("ADD: ~p\n", [D]),
+    lists:foreach(fun({Pid,Ref}) -> 
+			  Pid ! {uart_device,Ref,[added],D#uart_device.name}
+		  end, State#state.sub),
+    Ds = State#state.devices,
+    State#state { devices = [D|Ds]}.
+
+add_all([D|Ds],State) ->
+    State1 = add(D, State),
+    add_all(Ds, State1);
+add_all([], State) ->
+    State.
+    
+
+%% device is removed (USB device unplugged)
+removed_by_name(Name, State) ->
+    case lists:keytake(Name, #uart_device.name, State#state.devices) of
+	false ->
+	    State;
+	{value,D,Ds} ->
+	    remove(D,Ds,State)
+    end.
+
+removed_by_id(ID, State) ->
+    case lists:keytake(ID, #uart_device.id, State#state.devices) of
+	false ->
+	    State;
+	{value,D,Ds} ->
+	    remove(D,Ds,State)
+    end.
+
+remove_all([D|Ds],State) ->
+    State1 = remove(D,Ds,State),
+    remove_all(Ds, State1);
+remove_all([],State) ->
+    State.
+
+remove(D,Ds,State) ->
+    io:format("REMOVED: ~p\n", [D]),
+    if is_pid(D#uart_device.owner) ->
+	    %% maybe flag this ?
+	    D#uart_device.owner ! {uart_device,self(),[removed],
+				   D#uart_device.name};
+       true ->
+	    ok
+    end,
+    lists:foreach(fun({Pid,Ref}) -> 
+			  Pid ! {uart_device,Ref,[removed],D#uart_device.name}
+		  end, State#state.sub),
+    if is_reference(D#uart_device.mon) ->
+	    erlang:demonitor(D#uart_device.mon,[flush]),
+	    ok;
+       true ->
+	    ok
+    end,
+    State#state { devices = Ds }.
+
