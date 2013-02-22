@@ -83,7 +83,7 @@ i() ->
 				     true -> 
 					  "none"
 				  end,
-			      io:format("~-20s ~-15s ~-40s\n",
+			      io:format("~-25s ~-15s ~-35s\n",
 					[Name, O, I]);
 			  [] ->
 			      ok
@@ -398,8 +398,11 @@ list_serial_devices() ->
 
 is_uart_device(Path,Name) ->  %% fixme check fileinfo
     case os:type() of
-	{unix,_} ->
-	    case lists:prefix("tty", Name) of  
+	{unix,Type} ->
+	    Prefix = if  Type =:= darwin -> "tty.";
+			 true -> "tty"
+		     end,
+	    case lists:prefix(Prefix, Name) of  
 		true ->
 		    %% mac os x names are /dev/tty.*
 		    %% linux /dev/tty*
