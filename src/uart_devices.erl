@@ -6,7 +6,7 @@
 %%% @end
 %%% Created : 20 Feb 2013 by Tony Rogvall <tony@rogvall.se>
 %%%-------------------------------------------------------------------
--module(uart_device_srv).
+-module(uart_devices).
 
 -behaviour(gen_server).
 
