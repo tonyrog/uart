@@ -59,6 +59,9 @@ get_list() ->
 get_info(Name,Keys) ->
     gen_server:call(?SERVER, {get_info,Name,Keys}).
 
+get_fullname(Name) ->
+    gen_server:call(?SERVER, {get_fullname,Name}).
+
 subscribe() ->
     gen_server:call(?SERVER, {subscribe,self()}).
 
@@ -162,6 +165,14 @@ handle_call({get_info,Name,Keys}, _From, State) ->
 		     (_,Acc) -> Acc
 		  end, [], Keys),
 	    {reply, L, State}
+    end;
+handle_call({get_fullname,Name}, _From, State) ->
+    case lists:keyfind(Name,#uart_device.name,State#state.devices) of
+	false ->
+	    {reply, {error,enoent}, State};
+	_D=#uart_device {path = P, name = N} ->
+	    Path = filename:join(P,N),
+	    {reply, {ok,Path}, State}
     end;
 handle_call({subscribe,Pid}, _From, State) ->
     {Ref,State1} = subscribe_(Pid, State),
