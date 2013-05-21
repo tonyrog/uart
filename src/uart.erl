@@ -681,6 +681,7 @@ validate_opt(delay_send,Arg) -> is_boolean(Arg);
 validate_opt(header, Arg) -> is_integer(Arg) andalso (Arg >= 0);
 validate_opt(packet, {size,Sz}) -> is_uint16(Sz);
 validate_opt(packet, line) -> true;
+validate_opt(packet, basic_0710) -> true;
 validate_opt(packet, Arg) -> lists:member(Arg,lists:seq(-8,8));
 validate_opt(packet_size, Arg) -> is_uint32(Arg);
 validate_opt(deliver, Arg) -> lists:member(Arg,[port,term]);
@@ -834,9 +835,9 @@ encode_opt(mode,binary) ->
 
 encode_opt(packet,0) -> 
     <<?UART_OPT_PACKET, ?UART_PB_RAW:32>>;
-encode_opt(packet,PB) when PB>0, PB=< 8 -> 
+encode_opt(packet,PB) when is_integer(PB), PB>0, PB=< 8 -> 
     <<?UART_OPT_PACKET, (?UART_PB_N bor (PB bsl 8)):32>>;
-encode_opt(packet,PB) when PB<0, PB >= -8 ->
+encode_opt(packet,PB) when is_integer(PB), PB<0, PB >= -8 ->
     <<?UART_OPT_PACKET, (?UART_PB_N bor ?UART_PB_LITTLE_ENDIAN bor 
 			     ((-PB) bsl 8)):32>>;
 encode_opt(packet,{size,N}) when is_integer(N), N > 0, N =< 16#ffff ->
