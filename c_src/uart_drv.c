@@ -77,6 +77,7 @@ ErlDrvTermData am_list;
 ErlDrvTermData am_binary;
 ErlDrvTermData am_size;
 ErlDrvTermData am_line;
+ErlDrvTermData am_basic_0710;
 
 ErlDrvTermData am_ok;
 ErlDrvTermData am_uart;
@@ -98,10 +99,11 @@ static ErlDrvSSizeT ctl_reply(int rep, char* buf, ErlDrvSizeT len,
     char* ptr;
 
     if ((len+1) > rsize) {
-	// do not used DALLOC since emulator will release it!
-	if ((ptr = driver_alloc(len+1)) == NULL)
+	ErlDrvBinary* bin = driver_alloc_binary(len+1);
+	if (bin == NULL)
 	    return -1;
-	*rbuf = ptr;
+	ptr = bin->orig_bytes;
+	*rbuf = (char*)ptr;
     }
     else
 	ptr = *rbuf;
@@ -175,6 +177,7 @@ static int uart_drv_init(void)
 
     INIT_ATOM(size);
     INIT_ATOM(line);
+    INIT_ATOM(basic_0710);
 
     INIT_ATOM(ok);
     INIT_ATOM(uart);

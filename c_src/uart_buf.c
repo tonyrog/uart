@@ -183,7 +183,7 @@ int uart_buf_packet(uart_buf_t* bf, unsigned int htype, unsigned psize,
         }
         else {
             int len = (ptr2 - ptr) + 1; /* including newline */
-            if (len > (int)trunc_len && trunc_len!=0) {
+            if ((len > (int)trunc_len) && (trunc_len != 0)) {
                 DEBUGF(" => truncated line=%d", trunc_len);
                 return trunc_len;
             }
@@ -191,7 +191,41 @@ int uart_buf_packet(uart_buf_t* bf, unsigned int htype, unsigned psize,
             return len;
         }
     }
-
+    case UART_PB_BASIC_0710: {
+	/* UART_BP_BASIC_0710:
+	   <<0xF9,Address,Control,Len:7,1:1,Data/Len,FCS,0xF9>>
+	   <<0xF9,Address,Control,L0:7,0:1,L1:8,Data/(L1<<7+L0),FCS,0xF9>>
+	*/
+	if (n >= 6) {
+	    if (ptr[0] == 0xF9) {
+		if (ptr[3] & 0x1) { // short length
+		    plen = ptr[3]>>1;  // length of Data
+		    hlen = 6;          // rest of the bytes
+		    if (n >= plen+hlen)
+			return (plen+hlen);
+		    goto more;
+		}
+		else {
+		    plen = (ptr[4]<<7)+(ptr[3]>>1);  // length of Data
+		    hlen = 6;          // rest of the bytes
+		    if (n >= plen+hlen)
+			return (plen+hlen);
+		    goto more;
+		}
+	    }
+	    else {
+		// scan fo 0xF9 or send error ? 
+		plen = 1;
+		while(plen < n) {
+		    if (ptr[plen] != 0xF9)
+			return plen;  // deliver plen bytes!
+		    plen++;
+		}
+		return n;  // deliver all bytes
+	    }
+	}
+	goto more;
+    }
     default:
         DEBUGF(" => case error");
         return -1;

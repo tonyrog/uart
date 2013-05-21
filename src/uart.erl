@@ -75,6 +75,7 @@
 -define(UART_PB_RAW,       0).
 -define(UART_PB_N,         1).
 -define(UART_PB_LINE_LF,   2).
+-define(UART_PB_BASIC_0710,3).
 
 -define(UART_PASSIVE, 0).
 -define(UART_ACTIVE,  1).
@@ -770,6 +771,8 @@ encode_opt(packet,raw) ->
     <<?UART_OPT_PACKET, ?UART_PB_RAW:32>>;
 encode_opt(packet,line) ->
     <<?UART_OPT_PACKET, ?UART_PB_LINE_LF:32>>;
+encode_opt(packet,basic_0710) ->
+    <<?UART_OPT_PACKET, ?UART_PB_BASIC_0710:32>>;
 
 
 encode_opt(device,Name) when is_list(Name); is_binary(Name) ->
@@ -842,6 +845,8 @@ encode_opt(packet,raw) ->
     <<?UART_OPT_PACKET, ?UART_PB_RAW:32>>;
 encode_opt(packet,line) ->
     <<?UART_OPT_PACKET, ?UART_PB_LINE_LF:32>>;
+encode_opt(packet,basic_0710) ->
+    <<?UART_OPT_PACKET, ?UART_PB_BASIC_0710:32>>;
 encode_opt(high_watermark,X) when is_integer(X), X >= 0, X =< 16#ffffffff ->
     <<?UART_OPT_HIGH, X:32>>;    
 encode_opt(low_watermark,X) when is_integer(X), X >= 0, X =< 16#ffffffff ->

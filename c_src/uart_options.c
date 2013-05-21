@@ -145,6 +145,9 @@ int uart_get_opts(dterm_t* t, uart_ctx_t* ctx, uint8_t* ptr, size_t len)
 	    case UART_PB_LINE_LF:
 		dterm_kv_atom(t,am_packet, am_line); 
 		break;
+	    case UART_PB_BASIC_0710:
+		dterm_kv_atom(t,am_packet, am_basic_0710); 
+		break;
 	    default:
 		dterm_kv_uint(t,am_packet, ctx->option.htype);
 		break;

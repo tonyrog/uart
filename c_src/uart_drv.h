@@ -85,6 +85,7 @@ static inline void put_uint32(uint8_t* ptr, uint32_t v)
 #define UART_PB_RAW        0
 #define UART_PB_N          1
 #define UART_PB_LINE_LF    2
+#define UART_PB_BASIC_0710 3
 
 #define UART_PASSIVE  0
 #define UART_ACTIVE   1
@@ -223,6 +224,7 @@ extern ErlDrvTermData am_binary;
 
 extern ErlDrvTermData am_size;
 extern ErlDrvTermData am_line;
+extern ErlDrvTermData am_basic_0710;
 
 extern ErlDrvTermData am_ok;
 extern ErlDrvTermData am_uart;
