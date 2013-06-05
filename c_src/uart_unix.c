@@ -345,15 +345,11 @@ static int open_device(uart_ctx_t* ctx, char* name)
     if (strcmp(name, "pty") == 0) {
 //	int fd1;
 	char slave_name[UART_MAX_DEVICE_NAME];
-
+	
 	if ((fd = local_openpt(O_RDWR|O_NOCTTY)) < 0) { 
 	    DEBUGF("posix_openpt failed : %s", strerror(errno));
 	    return -1;
 	}
-#ifdef TIOCNOTTY
-	if (ioctl(fd, TIOCNOTTY, NULL) < 0)
-	    DEBUGF("ioctl TIOCNOTTY failed : %s", strerror(errno));
-#endif
 	if (grantpt(fd) < 0)
 	    DEBUGF("grantpt failed : %s", strerror(errno));
 	if (unlockpt(fd) < 0)
@@ -580,6 +576,7 @@ static int set_com_state(int fd, uart_com_state_t* com)
 
     // local line + enable receiver
     tio.c_cflag |= (CLOCAL | CREAD);
+
     // raw input processing
     tio.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG | IEXTEN);
     // no output processing
