@@ -6,6 +6,7 @@
 // http://www.unixwiz.net/techtips/termios-vmin-vtime.html
 //
 //
+#define _GNU_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -267,7 +268,7 @@ static int local_ptsname_r(int fd, char* buf, size_t maxlen)
     return 0;
 }
 #elif defined(__linux__)
-#define local_ptsname_r ptsname_t
+#define local_ptsname_r ptsname_r
 #elif defined(HAVE_PTY)
 static int local_ptsname_r(int fd, char* buf, size_t maxlen)
 {
