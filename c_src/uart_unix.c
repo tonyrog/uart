@@ -244,6 +244,97 @@ int next_timeout(uart_ctx_t* ctx)
     return ctx->tmo - td;
 }
 
+#if defined(__APPLE__)
+static int local_ptsname_r(int fd, char* buf, size_t maxlen)
+{
+    char devname[128];
+    struct stat sbuf;    
+    size_t n;
+    if (ioctl(fd, TIOCPTYGNAME, devname) < 0) {
+	DEBUGF("TIOCPTYGNAME failed : %s", strerror(errno));
+	return -1;
+    }
+    if (stat(devname, &sbuf) < 0) {
+	DEBUGF("stat %s failed : %s", devname, strerror(errno));	
+	return -1;
+    }
+    if ((n=strlen(devname)) >= maxlen) {
+	errno = ERANGE;
+	return -1;
+    }
+    memcpy(buf, devname, n);
+    buf[n] = '\0';
+    return 0;
+}
+#elif defined(__linux__)
+#define local_ptsname_r ptsname_t
+#elif defined(HAVE_PTY)
+static int local_ptsname_r(int fd, char* buf, size_t maxlen)
+{
+    char* ptr;
+    size_t n;
+
+    // FIXME lock!
+    if ((ptr = ptrname(fd)) == NULL) {
+	DEBUGF("ptsname failed : %s", strerror(errno));
+	return -1;
+    }
+    if ((n=strlen(ptr)) >= maxlen) {
+	errno = ERANGE;
+	return -1;
+    }
+    memcpy(buf, ptr, n);
+    buf[n] = '\0';
+    return 0;
+}
+#endif
+
+// pseudo terminal devices to try
+// On MacOS X: /dev/pty[p-w][0-9a-f]
+// On *BSD: /dev/pty[p-sP-S][0-9a-v]
+// On AIX: /dev/ptyp[0-9a-f]
+// On HP-UX: /dev/pty[p-r][0-9a-f]
+// On OSF/1: /dev/pty[p-q][0-9a-f]
+// On Solaris: /dev/pty[p-r][0-9a-f]
+#if defined(__APPLE__)
+int local_openpt(int oflag)
+{
+//    (void) oflag;
+    char devname[32];
+    const char* a = "pqrstuvw";
+    const char* b = "0123456789abcdef";
+    char* prefix = "/dev/pty";
+    int i,j,fd;
+
+//    return getpt();
+//    return open("/dev/ptmx", oflag);
+//    return posix_openpt(oflag);
+
+    for (i = 0; a[i]; i++) {
+	for (j = 0; b[j]; j++) {
+	    sprintf(devname, "%s%c%c", prefix,a[i],b[i]);
+	    if ((fd = open(devname, oflag)) >= 0) {
+		// fixme: check that the device is available
+		return fd;
+	    }
+	}
+    }
+    errno = ENOENT;
+    return -1;
+}
+#elif defined(__linux__)
+int local_openpt(int oflag)
+{
+    return posix_openpt(oflag);
+}
+#elif defined(HAVE_PTY)
+int local_openpt(int oflag)
+{
+    return posix_openpt(oflag);
+}
+#endif
+
+
 static int open_device(uart_ctx_t* ctx, char* name)
 {
     int flags;
@@ -251,14 +342,32 @@ static int open_device(uart_ctx_t* ctx, char* name)
 
 #ifdef HAVE_PTY
     if (strcmp(name, "pty") == 0) {
-	int fd1;
+//	int fd1;
 	char slave_name[UART_MAX_DEVICE_NAME];
 
-	if (openpty(&fd,&fd1,slave_name,NULL,NULL) < 0)
+	if ((fd = local_openpt(O_RDWR|O_NOCTTY)) < 0) { 
+	    DEBUGF("posix_openpt failed : %s", strerror(errno));
 	    return -1;
+	}
+#ifdef TIOCNOTTY
+	if (ioctl(fd, TIOCNOTTY, NULL) < 0)
+	    DEBUGF("ioctl TIOCNOTTY failed : %s", strerror(errno));
+#endif
+	if (grantpt(fd) < 0)
+	    DEBUGF("grantpt failed : %s", strerror(errno));
+	if (unlockpt(fd) < 0)
+	    DEBUGF("unlockpt failed : %s", strerror(errno));
+	if (local_ptsname_r(fd, slave_name, sizeof(slave_name)) < 0) {
+	    DEBUGF("ptsname_r failed : %s", strerror(errno));
+	}
+//	if (openpty(&fd,&fd1,slave_name,NULL,NULL) < 0)
+//	    return -1;
+        // disconnect from terminal, avoid to get HUP from slave
+//	if (ioctl(fd, TIOCNOTTY, NULL) < 0)
+//	    WARNF("unable to set TIOCNOTTY : %s", strerror(errno));
 	INFOF("slave name = %s", slave_name);
 	strcpy(name, slave_name);
-	// close(fd1); // ???
+//	close(fd1);
     } else
 #endif
     {
@@ -375,8 +484,10 @@ static int set_com_state(int fd, uart_com_state_t* com)
     struct termios tio;
 
     // read current state
-    if (tcgetattr(fd, &tio) < 0)
+    if (tcgetattr(fd, &tio) < 0) {
+	DEBUGF("unable to read com state: %s", strerror(errno));
 	return -1;
+    }
 
     // On Mac os X IOSSIOSPEED can be used to set "non-traditional baud rate"
     // From "IOKit/serial/ioss.h"
@@ -463,14 +574,17 @@ static int set_com_state(int fd, uart_com_state_t* com)
     UPD_BIT(tio.c_iflag, CRTSCTS, (com->oflow & UART_CD));
 #endif
 
+    // ignore break condition
+    tio.c_iflag |= IGNBRK;
+
     // local line + enable receiver
     tio.c_cflag |= (CLOCAL | CREAD);
     // raw input processing
-    tio.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+    tio.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG | IEXTEN);
     // no output processing
     tio.c_oflag &= ~(OPOST);
 
-//    tio.c_cflag &= ~HUPCL;   // do NOT hangup-on-close 
+    tio.c_cflag &= ~HUPCL;   // do NOT hangup-on-close 
     
     tcflush(fd, TCIFLUSH);
     return tcsetattr(fd, TCSANOW, &tio);
@@ -789,7 +903,7 @@ int process_input(uart_ctx_t* ctx, dthread_t* self, int request_len)
 	}
     }
     else if (n == 0) {
-	DEBUGF("  => detected close");
+	DEBUGF("  => detected zero bytes %s", strerror(errno));
 	return uart_recv_closed(ctx);
     }
 

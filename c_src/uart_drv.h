@@ -140,7 +140,7 @@ static inline void put_uint32(uint8_t* ptr, uint32_t v)
 #define UART_OPT_SENDTMO    25  // send timeout
 #define UART_OPT_CLOSETMO   26  // send close timeout
 #define UART_OPT_BUFFER     27
-// #define UART_OPT_BIT8       28
+#define UART_OPT_DEBUG      28
 #define UART_OPT_EXITF      29
 #define UART_OPT_MAX        31
 
@@ -205,6 +205,7 @@ extern ErlDrvTermData am_send_timeout;
 extern ErlDrvTermData am_send_timeout_close;
 extern ErlDrvTermData am_buffer;
 extern ErlDrvTermData am_exit_on_close;
+extern ErlDrvTermData am_debug;
 
 extern ErlDrvTermData am_none;
 extern ErlDrvTermData am_odd;

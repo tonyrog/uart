@@ -65,6 +65,7 @@
 -define(UART_OPT_SENDTMO, 25).  %% send timeout
 -define(UART_OPT_CLOSETMO, 26).  %% send close timeout
 -define(UART_OPT_BUFFER,   27).
+-define(UART_OPT_DEBUG,    28).
 -define(UART_OPT_EXITF,     29).
 
 -define(UART_PB_LITTLE_ENDIAN, 16#00008000). %% UART_PB_<n> 
@@ -121,7 +122,7 @@
 	buftm | stopb | parity | iflow | oflow | xonchar |
 	xoffchar | eolchar | active | delay_send |
 	header | packet | packet_size | deliver | mode |
-	buffer | exit_on_close.
+	buffer | exit_on_close | debug.
 
 %%  Todo:
 %% 	high_watermark | low_watermark | send_timeout | send_timeout_close | 
@@ -160,6 +161,7 @@
 %% <li> `{exit_on_close, boolean()}' </li>
 %% <li> `{bufsz, 0..255}' - Max low level uart buffer size </li>
 %% <li> `{buftm, 0..25500}' - Inter character timeout </li>
+%% <li> `{debug, log_level()} - Set debug level</li>
 %% </ul>
 %% @end
 %%--------------------------------------------------------------------
@@ -188,12 +190,9 @@ options() ->
      packet_size,
      deliver,
      mode,
-%%     high_watermark,
-%%     low_watermark,
-%%     send_timeout,
-%%     send_timeout_close,
      buffer,
-     exit_on_close
+     exit_on_close,
+     debug
     ].
 
 %%--------------------------------------------------------------------
@@ -690,6 +689,9 @@ validate_opt(buffer,Arg) -> is_uint32(Arg);
 validate_opt(exit_on_close, Arg) -> is_boolean(Arg);
 validate_opt(bufsz, Arg) -> (Arg >= 0 andalso Arg =< 255);
 validate_opt(buftm, Arg) -> (Arg >= 0 andalso Arg =< 25500);
+validate_opt(debug, Arg) ->
+    lists:member(Arg,[debug,info,notice,warning,
+		      error,critical,alert,emergency,none]);
 validate_opt(_,_Arg) -> undefined.
 
 is_baudrate(Rate) ->
@@ -859,7 +861,20 @@ encode_opt(send_timeout_close,X) when is_integer(X),X >= -1, X =< 16#7fffffff ->
 encode_opt(buffer, X) when is_integer(X), X >= 0, X =< 16#ffffffff ->
     <<?UART_OPT_BUFFER, X:32>>;    
 encode_opt(exit_on_close, X) when is_boolean(X) ->
-    <<?UART_OPT_EXITF,?bool(X):32>>.
+    <<?UART_OPT_EXITF,?bool(X):32>>;
+encode_opt(debug, X) ->
+    case X of 
+	debug      -> <<?UART_OPT_DEBUG, 7:32>>;
+	info       -> <<?UART_OPT_DEBUG, 6:32>>;
+	notice     -> <<?UART_OPT_DEBUG, 5:32>>;
+	warning    -> <<?UART_OPT_DEBUG, 4:32>>;
+	error      -> <<?UART_OPT_DEBUG, 3:32>>;
+	critical   -> <<?UART_OPT_DEBUG, 2:32>>;
+	alert      -> <<?UART_OPT_DEBUG, 1:32>>;
+	emergency -> <<?UART_OPT_DEBUG,  0:32>>;
+	none      -> <<?UART_OPT_DEBUG, -1:32>>
+    end.
+
 
 encode_opt(device) -> ?UART_OPT_DEVICE;
 encode_opt(ibaud)  -> ?UART_OPT_IBAUD;
@@ -886,9 +901,9 @@ encode_opt(low_watermark) -> ?UART_OPT_LOW;
 encode_opt(send_timeout) -> ?UART_OPT_SENDTMO;
 encode_opt(send_timeout_close) -> ?UART_OPT_CLOSETMO;
 encode_opt(buffer) -> ?UART_OPT_BUFFER;
-encode_opt(exit_on_close) -> ?UART_OPT_EXITF.
+encode_opt(exit_on_close) -> ?UART_OPT_EXITF;
+encode_opt(debug) -> ?UART_OPT_DEBUG.
     
-     
 encode_flags([F|Fs]) ->
     encode_flag(F) + encode_flags(Fs);
 encode_flags([]) ->
