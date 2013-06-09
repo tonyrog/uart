@@ -451,25 +451,26 @@ static int get_com_state(int fd, uart_com_state_t* com)
     com->iflow = 0;
     if (tio.c_iflag & IXOFF) com->iflow |= UART_SW;
 #if defined(CRTS_IFLOW)
-    if (tio.c_iflag & CRTS_IFLOW) com->iflow |= UART_RTS;
+    if (tio.c_cflag & CRTS_IFLOW) com->iflow |= UART_RTS;
 #endif
 #if defined(CDTR_IFLOW)
-    if (tio.c_iflag & CDTR_IFLOW) com->iflow |= UART_DTR;
+    if (tio.c_cflag & CDTR_IFLOW) com->iflow |= UART_DTR;
 #endif
 
     com->oflow = 0;
     if (tio.c_iflag & IXON) com->oflow |= UART_SW;
 #if defined(CCTS_OFLOW)
-    if (tio.c_iflag & CCTS_OFLOW) com->oflow |= UART_CTS;
+    if (tio.c_cflag & CCTS_OFLOW) com->oflow |= UART_CTS;
 #endif
 #if defined(CDSR_OFLOW)
-    if (tio.c_iflag & CDSR_OFLOW) com->oflow |= UART_DSR;
+    if (tio.c_cflag & CDSR_OFLOW) com->oflow |= UART_DSR;
 #endif
 #if defined(CCAR_OFLOW)
-    if (tio.c_iflag & CCAR_OFLOW) com->oflow |= UART_CD;
-#elif defined(CRTSCTS)
-    if (tio.c_iflag & CRTSCTS) {
-	com->oflow |= UART_CD;
+    if (tio.c_cflag & CCAR_OFLOW) com->oflow |= UART_CD;
+#endif
+#if defined(CRTSCTS)
+    if ((tio.c_cflag & CRTSCTS) == CRTSCTS) {
+	com->oflow |= UART_CTS; //com->oflow |= UART_CD;
 	com->iflow |= UART_RTS;
     }
 #endif
@@ -549,28 +550,29 @@ static int set_com_state(int fd, uart_com_state_t* com)
     // input flow control
     UPD_BIT(tio.c_iflag, IXOFF, (com->iflow & UART_SW));
 #if defined(CRTS_IFLOW)
-    UPD_BIT(tio.c_iflag, CRTS_IFLOW, (com->iflow & UART_RTS));
-#elif defined(CRTSCTS)
-    UPD_BIT(tio.c_iflag, CRTSCTS, (com->iflow & UART_RTS));
+    UPD_BIT(tio.c_cflag, CRTS_IFLOW, (com->iflow & UART_RTS));
 #endif
 #if defined(CDTR_IFLOW)
-    UPD_BIT(tio.c_iflag, CDTR_IFLOW, (com->iflow & UART_DTR));
+    UPD_BIT(tio.c_cflag, CDTR_IFLOW, (com->iflow & UART_DTR));
 #endif
 
     // output flow control
     UPD_BIT(tio.c_iflag, IXON, (com->oflow & UART_SW));
 #if defined(CCTS_OFLOW)
-    UPD_BIT(tio.c_iflag, CCTS_OFLOW, (com->oflow & UART_CTS));
+    UPD_BIT(tio.c_cflag, CCTS_OFLOW, (com->oflow & UART_CTS));
 #endif
 #if defined(CDSR_OFLOW)
-    UPD_BIT(tio.c_iflag, CDSR_OFLOW, (com->oflow & UART_DSR));
+    UPD_BIT(tio.c_cflag, CDSR_OFLOW, (com->oflow & UART_DSR));
 #endif
 #if defined(CCAR_OFLOW)
-    UPD_BIT(tio.c_iflag, CCAR_OFLOW, (com->oflow & UART_CD));
-#elif defined(CRTSCTS)
-    UPD_BIT(tio.c_iflag, CRTSCTS, (com->oflow & UART_CD));
+    UPD_BIT(tio.c_cflag, CCAR_OFLOW, (com->oflow & UART_CD));
 #endif
-
+#if defined(CRTSCTS)
+    if ((com->iflow & UART_RTS) && (com->oflow & UART_CTS))
+	tio.c_cflag |= CRTSCTS;
+    else if (!(com->iflow & UART_RTS) && !(com->oflow & UART_CTS))
+	tio.c_cflag &= ~CRTSCTS;
+#endif
     // ignore break condition
     tio.c_iflag |= IGNBRK;
 
@@ -581,7 +583,6 @@ static int set_com_state(int fd, uart_com_state_t* com)
     tio.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG | IEXTEN);
     // no output processing
     tio.c_oflag &= ~(OPOST);
-
     tio.c_cflag &= ~HUPCL;   // do NOT hangup-on-close 
     
     tcflush(fd, TCIFLUSH);
