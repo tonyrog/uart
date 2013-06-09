@@ -225,7 +225,7 @@ open(DeviceName, Opts) ->
 		ok ->
 		    {ok,Uart};
 		Error ->
-		    erlang:port_close(Uart),
+		    close(Uart),
 		    Error
 	    end;
 
@@ -278,7 +278,8 @@ fmt_(U) ->
 -spec close(Uart::uart()) -> true.
 
 close(Uart) when ?is_uart(Uart) ->
-    erlang:port_close(Uart).
+    (catch erlang:port_close(Uart)),
+    true.
 
 %%--------------------------------------------------------------------
 %% @doc Get single option value.

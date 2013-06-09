@@ -313,7 +313,7 @@ int local_openpt(int oflag)
 
     for (i = 0; a[i]; i++) {
 	for (j = 0; b[j]; j++) {
-	    sprintf(devname, "%s%c%c", prefix,a[i],b[i]);
+	    sprintf(devname, "%s%c%c", prefix,a[i],b[j]);
 	    if ((fd = open(devname, oflag)) >= 0) {
 		// fixme: check that the device is available
 		return fd;
