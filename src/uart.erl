@@ -53,10 +53,12 @@
 -define(UART_OPT_XOFFCHAR, 11).
 -define(UART_OPT_XONCHAR,  12).
 -define(UART_OPT_EOLCHAR,  13).
+%% -define(UART_OPT_14,    14).
 -define(UART_OPT_ACTIVE,   15).
 -define(UART_OPT_DELAY_SEND, 16).
 -define(UART_OPT_DELIVER, 17).
 -define(UART_OPT_MODE, 18).
+%% -define(UART_OPT_19,    19).
 -define(UART_OPT_HEADER, 20).
 -define(UART_OPT_PACKET, 21).
 -define(UART_OPT_PSIZE, 22).
@@ -67,6 +69,8 @@
 -define(UART_OPT_BUFFER,   27).
 -define(UART_OPT_DEBUG,    28).
 -define(UART_OPT_EXITF,     29).
+-define(UART_OPT_PTYPKT,    30).
+%% -define(UART_OPT_31,    31).
 
 -define(UART_PB_LITTLE_ENDIAN, 16#00008000). %% UART_PB_<n> 
 -define(UART_PB_BYTES_MASK,    16#00000F00). %% UART_PB_<n> 0..8 allowed
@@ -162,6 +166,7 @@
 %% <li> `{bufsz, 0..255}' - Max low level uart buffer size </li>
 %% <li> `{buftm, 0..25500}' - Inter character timeout </li>
 %% <li> `{debug, log_level()} - Set debug level</li>
+%% <li> `{ptypkt, boolean()}  - Set pty packet mode</li>
 %% </ul>
 %% @end
 %%--------------------------------------------------------------------
@@ -192,7 +197,8 @@ options() ->
      mode,
      buffer,
      exit_on_close,
-     debug
+     debug,
+     ptypkt
     ].
 
 %%--------------------------------------------------------------------
@@ -688,6 +694,7 @@ validate_opt(deliver, Arg) -> lists:member(Arg,[port,term]);
 validate_opt(mode,Arg) -> lists:member(Arg,[list,binary]);
 validate_opt(buffer,Arg) -> is_uint32(Arg);
 validate_opt(exit_on_close, Arg) -> is_boolean(Arg);
+validate_opt(ptypkt, Arg) -> is_boolean(Arg);
 validate_opt(bufsz, Arg) -> (Arg >= 0 andalso Arg =< 255);
 validate_opt(buftm, Arg) -> (Arg >= 0 andalso Arg =< 25500);
 validate_opt(debug, Arg) ->
@@ -863,6 +870,8 @@ encode_opt(buffer, X) when is_integer(X), X >= 0, X =< 16#ffffffff ->
     <<?UART_OPT_BUFFER, X:32>>;    
 encode_opt(exit_on_close, X) when is_boolean(X) ->
     <<?UART_OPT_EXITF,?bool(X):32>>;
+encode_opt(ptypkt, X) when is_boolean(X) ->
+    <<?UART_OPT_PTYPKT,?bool(X):32>>;
 encode_opt(debug, X) ->
     case X of 
 	debug      -> <<?UART_OPT_DEBUG, 7:32>>;
@@ -903,7 +912,8 @@ encode_opt(send_timeout) -> ?UART_OPT_SENDTMO;
 encode_opt(send_timeout_close) -> ?UART_OPT_CLOSETMO;
 encode_opt(buffer) -> ?UART_OPT_BUFFER;
 encode_opt(exit_on_close) -> ?UART_OPT_EXITF;
-encode_opt(debug) -> ?UART_OPT_DEBUG.
+encode_opt(debug) -> ?UART_OPT_DEBUG;
+encode_opt(ptypkt) -> ?UART_OPT_PTYPKT.
     
 encode_flags([F|Fs]) ->
     encode_flag(F) + encode_flags(Fs);

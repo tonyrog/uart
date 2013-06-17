@@ -63,6 +63,8 @@ ErlDrvTermData am_send_timeout;
 ErlDrvTermData am_send_timeout_close;
 ErlDrvTermData am_buffer;
 ErlDrvTermData am_exit_on_close;
+ErlDrvTermData am_debug;
+ErlDrvTermData am_ptypkt;
 ErlDrvTermData am_none;
 ErlDrvTermData am_odd;
 ErlDrvTermData am_even;
@@ -78,7 +80,7 @@ ErlDrvTermData am_binary;
 ErlDrvTermData am_size;
 ErlDrvTermData am_line;
 ErlDrvTermData am_basic_0710;
-ErlDrvTermData am_debug;
+
 
 ErlDrvTermData am_ok;
 ErlDrvTermData am_uart;
@@ -159,6 +161,7 @@ static int uart_drv_init(void)
     INIT_ATOM(send_timeout_close);
     INIT_ATOM(buffer);
     INIT_ATOM(exit_on_close);
+    INIT_ATOM(ptypkt);
 
     INIT_ATOM(none);
     INIT_ATOM(odd);
@@ -180,6 +183,7 @@ static int uart_drv_init(void)
     INIT_ATOM(line);
     INIT_ATOM(basic_0710);
     INIT_ATOM(debug);
+
 
     INIT_ATOM(ok);
     INIT_ATOM(uart);

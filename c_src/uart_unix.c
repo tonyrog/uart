@@ -743,6 +743,15 @@ static int apply_opts(uart_ctx_t* ctx,
 	}
     }
 
+    if (sflags & (1 << UART_OPT_PTYPKT)) {
+	if ((ctx->fd != ctx->tty_fd) && (ctx->fd >= 0)) {
+	    DEBUGF("set TIOCPKT = %d\n", option->ptypkt);
+	    if (ioctl(ctx->fd, TIOCPKT, &option->ptypkt) < 0) {
+		DEBUGF("set_opts: ioctl TIOCPKT failed: %s", strerror(errno));
+	    }
+	}
+    }
+
     old_active = ctx->option.active;
     old_htype = ctx->option.htype;
 	    
@@ -1056,8 +1065,11 @@ again:
     if (ctx.fd >= 0) {
 	ev.event = (ErlDrvEvent) ((long)ctx.fd);
 	ev.events = 0;
-	if ((ctx.option.active != UART_PASSIVE) || ctx.recv)
+	if ((ctx.option.active != UART_PASSIVE) || ctx.recv) {
 	    ev.events |= ERL_DRV_READ;
+	    if (ctx.option.ptypkt && (ctx.fd != ctx.tty_fd))
+		ev.events |= ERL_DRV_EXCEP;
+	}
 	if (ctx.oq.mesg)
 	    ev.events |= ERL_DRV_WRITE;
 	if (ev.events) {
@@ -1081,7 +1093,7 @@ again:
 	if (evp && (nev == 1)) {
 	    if (evp->revents & ERL_DRV_WRITE)
 		process_output(&ctx, self);
-	    if (evp->revents & ERL_DRV_READ) {
+	    if (evp->revents & (ERL_DRV_READ|ERL_DRV_EXCEP)) {
 		while((process_input(&ctx, self, 0) == 1) && 
 		      (ctx.option.active != UART_PASSIVE))
 		    ;

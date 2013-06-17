@@ -170,6 +170,9 @@ int uart_get_opts(dterm_t* t, uart_ctx_t* ctx, uint8_t* ptr, size_t len)
 	    dterm_kv_uint(t,am_send_timeout_close, 
 			  ctx->option.send_timeout_close); 
 	    break;
+	case UART_OPT_PTYPKT:
+	    dterm_kv_uint(t,am_ptypkt, ctx->option.ptypkt); 
+	    break;
 	case UART_OPT_BUFFER: 
 	    dterm_kv_uint(t,am_buffer, ctx->option.bsize);
 	    break;
@@ -256,6 +259,7 @@ int uart_parse_opts(char* buf, ErlDrvSizeT len,
 	case UART_OPT_CLOSETMO: GET_UINT32(option->send_timeout_close); break;
 	case UART_OPT_BUFFER:   GET_UINT32(option->bsize); break;
 	case UART_OPT_EXITF:    GET_UINT32(option->exitf); break;
+	case UART_OPT_PTYPKT:   GET_UINT32(option->ptypkt); break;
 	default:
 	    return -1;
 	}

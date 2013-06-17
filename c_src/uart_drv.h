@@ -127,11 +127,12 @@ static inline void put_uint32(uint8_t* ptr, uint32_t v)
 #define UART_OPT_XOFFCHAR   11
 #define UART_OPT_XONCHAR    12
 #define UART_OPT_EOLCHAR    13
-// #define UART_OPT_EOL2CHAR   14
+// #define UART_OPT_14   14
 #define UART_OPT_ACTIVE     15
 #define UART_OPT_DELAY_SEND 16
 #define UART_OPT_DELIVER    17
 #define UART_OPT_MODE       18
+// #define UART_OPT_19   19
 #define UART_OPT_HEADER     20
 #define UART_OPT_PACKET     21
 #define UART_OPT_PSIZE      22
@@ -142,6 +143,7 @@ static inline void put_uint32(uint8_t* ptr, uint32_t v)
 #define UART_OPT_BUFFER     27
 #define UART_OPT_DEBUG      28
 #define UART_OPT_EXITF      29
+#define UART_OPT_PTYPKT     30
 #define UART_OPT_MAX        31
 
 
@@ -206,6 +208,7 @@ extern ErlDrvTermData am_send_timeout_close;
 extern ErlDrvTermData am_buffer;
 extern ErlDrvTermData am_exit_on_close;
 extern ErlDrvTermData am_debug;
+extern ErlDrvTermData am_ptypkt;
 
 extern ErlDrvTermData am_none;
 extern ErlDrvTermData am_odd;
@@ -238,6 +241,7 @@ extern ErlDrvTermData am_uart_closed;
 extern ErlDrvTermData am_uart_error;
 extern ErlDrvTermData am_empty_out_q;
 
+
 #define ATOM(NAME) am_ ## NAME
 #define INIT_ATOM(NAME) am_ ## NAME = driver_mk_atom(#NAME)
 
@@ -261,6 +265,7 @@ typedef struct {
     unsigned int hsz;                // the list header size, -1 is large !!!
     unsigned int bsize;              // input buffer size (buffer)
     int          exitf;              // exit on error
+    int          ptypkt;             // pty packet mode
 } uart_opt_t;
 
 
