@@ -137,7 +137,7 @@
 %%
 %%   List of available options:
 %% <ul>
-%% <li> `{device, "pty" | string()}' </li>
+%% <li> `{device, "//pty" | string()}' </li>
 %% <li> `{ibaud, baudrate()}' </li>
 %% <li> `{obaud, baudrate()}' </li>
 %% <li> `{baud, baudrate()}' </li>
@@ -198,7 +198,7 @@ options() ->
 %%--------------------------------------------------------------------
 %% @doc Opens a tty device.
 %%
-%%   The device name `pty' is reserved for opening a pseudo terminal
+%%   The device name `//pty' is reserved for opening a pseudo terminal
 %%   using the openpty call. The slave device is accessed through the
 %%   device option. See {@link options/0} for a description of 
 %%   available options.

@@ -311,7 +311,8 @@ typedef struct _uart_ctx_t
     BOOLEAN          writing;   // Overlapped write in progress
     char             rbuf[1];   // Overlapped read into this buffer
 #else
-    int              fd;       // unix
+    int              tty_fd;    // fd connected to tty device
+    int              fd;        // master side when pty else same as tty_fd
 #endif
     ErlDrvPort       port;
     ErlDrvTermData   dport;     // the port identifier as DriverTermData

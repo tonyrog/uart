@@ -322,7 +322,7 @@ tty(b) ->
 	    ct:get_config({device, win32, b})
     end;
 tty(pty) ->
-    "pty";
+    "//pty";
 tty(Name) when is_list(Name) ->
     Name.
 

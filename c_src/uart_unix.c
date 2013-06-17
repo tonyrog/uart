@@ -336,57 +336,90 @@ int local_openpt(int oflag)
 #endif
 
 
-static int open_device(uart_ctx_t* ctx, char* name)
+static int open_device(uart_ctx_t* ctx, char* name, size_t max_namelen)
 {
     int flags;
-    int fd;
+    int tty_fd = -1;
+    int fd     = -1;
 
+    if (strcmp(name, "//pty") == 0) {
 #ifdef HAVE_PTY
-    if (strcmp(name, "pty") == 0) {
-//	int fd1;
 	char slave_name[UART_MAX_DEVICE_NAME];
 	
 	if ((fd = local_openpt(O_RDWR|O_NOCTTY)) < 0) { 
 	    DEBUGF("posix_openpt failed : %s", strerror(errno));
 	    return -1;
 	}
-	if (grantpt(fd) < 0)
+	if (grantpt(fd) < 0) {
 	    DEBUGF("grantpt failed : %s", strerror(errno));
-	if (unlockpt(fd) < 0)
+	    goto error;
+	}
+	if (unlockpt(fd) < 0) {
 	    DEBUGF("unlockpt failed : %s", strerror(errno));
+	    goto error;
+	}
 	if (local_ptsname_r(fd, slave_name, sizeof(slave_name)) < 0) {
 	    DEBUGF("ptsname_r failed : %s", strerror(errno));
+	    goto error;
 	}
-//	if (openpty(&fd,&fd1,slave_name,NULL,NULL) < 0)
-//	    return -1;
-        // disconnect from terminal, avoid to get HUP from slave
-//	if (ioctl(fd, TIOCNOTTY, NULL) < 0)
-//	    WARNF("unable to set TIOCNOTTY : %s", strerror(errno));
-	INFOF("slave name = %s", slave_name);
+	if (strlen(slave_name) >= max_namelen) {
+	    errno = ERANGE;
+	    goto error;
+	}
 	strcpy(name, slave_name);
-//	close(fd1);
-    } else
+	if ((flags = fcntl(fd, F_GETFL, 0)) < 0) {
+	    DEBUGF("fcntl: F_GETFL failed : %s", strerror(errno));
+	    goto error;
+	}
+	if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+	    DEBUGF("fcntl: F_SETFL failed : %s", strerror(errno));
+	    goto error;
+	}
+#else
+	errno = ENOTSUP;
+	return -1;
 #endif
-    {
-	if ((fd = open(name, O_RDWR|O_NDELAY|O_NOCTTY)) < 0)
-	    return -1;
     }
-    flags = fcntl(fd, F_GETFL, 0);
-    fcntl(fd, F_SETFL, flags | O_NONBLOCK);   // non-blocking!!!
-
-    tcflush(fd, TCOFLUSH);
-    tcflush(fd, TCIFLUSH);
-    ctx->fd = fd;
-    DEBUGF("open_device: %d", ctx->fd);
-    return fd;
+    if ((tty_fd = open(name, O_RDWR|O_NDELAY|O_NOCTTY)) < 0)
+	goto error;
+    // non-blocking!!!
+    if ((flags = fcntl(tty_fd, F_GETFL, 0)) < 0) {
+	DEBUGF("fcntl: F_GETFL tty_fd failed : %s", strerror(errno));
+	goto error;
+    }
+    if (fcntl(tty_fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+	DEBUGF("fcntl: F_SETFL tty_fd failed : %s", strerror(errno));
+	goto error;
+    }
+    tcflush(tty_fd, TCOFLUSH);
+    tcflush(tty_fd, TCIFLUSH);
+    ctx->tty_fd = tty_fd;
+    ctx->fd = (fd>=0) ? fd : tty_fd;
+    DEBUGF("open_device: tty_fd=%d fd=%d", ctx->tty_fd, ctx->fd);
+    return tty_fd;
+error:
+    {
+	int save_errno = errno;
+	if (fd >= 0) close(fd);
+	if ((fd != tty_fd) && (tty_fd >= 0)) close(tty_fd);
+	errno = save_errno;	    
+    }
+    return -1;
 }
 
 static void close_device(uart_ctx_t* ctx)
 {
-    if (ctx->fd >= 0) {
-	DEBUGF("close_device: %d", ctx->fd);
-	close(ctx->fd);
-	ctx->fd = -1;
+    if (ctx->fd != ctx->tty_fd) {
+	if (ctx->fd >= 0) {
+	    DEBUGF("close_device: master=%d", ctx->fd);
+	    close(ctx->fd);
+	    ctx->fd = -1;
+	}
+    }
+    if (ctx->tty_fd >= 0) {
+	DEBUGF("close_device: fd=%d", ctx->tty_fd);
+	close(ctx->tty_fd);
+	ctx->tty_fd = -1;
     }
 }
 
@@ -583,7 +616,8 @@ static int set_com_state(int fd, uart_com_state_t* com)
     tio.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG | IEXTEN);
     // no output processing
     tio.c_oflag &= ~(OPOST);
-    tio.c_cflag &= ~HUPCL;   // do NOT hangup-on-close 
+    // do NOT hangup-on-close, need? we keep one slave open
+    tio.c_cflag &= ~HUPCL;   
     
     tcflush(fd, TCIFLUSH);
     return tcsetattr(fd, TCSANOW, &tio);
@@ -635,6 +669,7 @@ void uart_init(uart_ctx_t* ctx, dthread_t* self, dthread_t* other)
 {
     memset(ctx, 0, sizeof(uart_ctx_t));
     ctx->fd = -1;
+    ctx->tty_fd = -1;
     ctx->option.bsize = UART_DEF_BUFFER; 
     ctx->option.high = UART_HIGH_WATERMARK;
     ctx->option.low  = UART_LOW_WATERMARK;
@@ -671,19 +706,18 @@ static int apply_opts(uart_ctx_t* ctx,
 
     if ((sflags & (1 << UART_OPT_DEVICE)) &&
 	(strcmp(option->device_name, ctx->option.device_name) != 0)) {
-	
 	close_device(ctx);
 	sflags  = 0;
-	if (open_device(ctx, option->device_name) < 0)
+	if (open_device(ctx,option->device_name,sizeof(option->device_name))<0)
 	    return -1;
 #ifdef DEBUG
 	// com_state_dump(stderr, state);
 #endif
-	if (set_com_state(ctx->fd, state) < 0) {
+	if (set_com_state(ctx->tty_fd, state) < 0) {
 	    DEBUGF("set_opts: uart_set_com_state failed");
 	    return -1;
 	}
-	if (get_com_state(ctx->fd, state) >= 0) {
+	if (get_com_state(ctx->tty_fd, state) >= 0) {
 	    DEBUGF("set_opts: com_state: after");
 #ifdef DEBUG
 	    // com_state_dump(stderr, state);
@@ -694,13 +728,13 @@ static int apply_opts(uart_ctx_t* ctx,
 	}
     }
     else if (sflags & UART_OPT_COMM) {
-	if (ctx->fd >= 0) {
+	if (ctx->tty_fd >= 0) {
 	    // DEBUGF("set_opts: com_state before:");
 	    // com_state_dump(stderr, state);
-	    if (set_com_state(ctx->fd, state) < 0)
+	    if (set_com_state(ctx->tty_fd, state) < 0)
 		return -1;
 	    sflags = 0;
-	    if (get_com_state(ctx->fd, state) >= 0) {
+	    if (get_com_state(ctx->tty_fd, state) >= 0) {
 		// DEBUGF("set_opts: com_state: after");
 #ifdef DEBUG
 		// com_state_dump(stderr, state);
@@ -716,7 +750,7 @@ static int apply_opts(uart_ctx_t* ctx,
     ctx->state  = *state;
     ctx->option = *option;
 
-    if (ctx->fd >= 0) {
+    if (ctx->tty_fd >= 0) {
 	if (ctx->option.active) {
 	    if (!old_active || (ctx->option.htype != old_htype))
 		return 1;
@@ -1031,7 +1065,6 @@ again:
 	    nev = 1;
 	}
 	DEBUGF("ctx.fd=%d, ev.events=%d", ctx.fd, ev.events);
-
     }
 
     DEBUGF("uart_unix_main: nev=%d, events=%x, timeout = %d", 
@@ -1210,8 +1243,8 @@ again:
 	    dterm_mark_t m1;
 	    dterm_mark_t m2;
 	    uart_modem_state_t mstate;
-	    if (ctx.fd < 0) goto ebadf;
-	    if (get_modem_state(ctx.fd, &mstate) < 0) goto error;
+	    if (ctx.tty_fd < 0) goto ebadf;
+	    if (get_modem_state(ctx.tty_fd, &mstate) < 0) goto error;
 
 	    dterm_tuple_begin(&term, &m1); {
 		dterm_uint(&term, mp_ref);
@@ -1230,34 +1263,34 @@ again:
 
 	case UART_CMD_SET_MODEM: {
 	    uart_modem_state_t mstate;	    
-	    if (ctx.fd < 0) goto ebadf;
+	    if (ctx.tty_fd < 0) goto ebadf;
 	    if (mp->used != 4) goto badarg;
 	    mstate = (uart_modem_state_t) get_uint32((uint8_t*) mp->buffer);
-	    if (set_modem_state(ctx.fd, mstate, 1) < 0) goto error;
+	    if (set_modem_state(ctx.tty_fd, mstate, 1) < 0) goto error;
 	    goto ok;
 	}
 
 	case UART_CMD_CLR_MODEM: {
 	    uart_modem_state_t mstate;
-	    if (ctx.fd < 0) goto ebadf;
+	    if (ctx.tty_fd < 0) goto ebadf;
 	    if (mp->used != 4) goto badarg;
 	    mstate = (uart_modem_state_t) get_uint32((uint8_t*) mp->buffer);
-	    if (set_modem_state(ctx.fd, mstate, 0) < 0) goto error;
+	    if (set_modem_state(ctx.tty_fd, mstate, 0) < 0) goto error;
 	    goto ok;
 	}
 		
 	case UART_CMD_HANGUP: {
 	    struct termios tio;
 	    int r;
-	    if (ctx.fd < 0) goto ebadf;
+	    if (ctx.tty_fd < 0) goto ebadf;
 	    if (mp->used != 0) goto badarg;
-	    if ((r = tcgetattr(ctx.fd, &tio)) < 0) {
+	    if ((r = tcgetattr(ctx.tty_fd, &tio)) < 0) {
 		INFOF("tcgetattr: error=%s\n", strerror(errno));
 		goto badarg;
 	    }
 	    cfsetispeed(&tio, B0);
 	    cfsetospeed(&tio, B0);
-	    if ((r = tcsetattr(ctx.fd, TCSANOW, &tio)) < 0) {
+	    if ((r = tcsetattr(ctx.tty_fd, TCSANOW, &tio)) < 0) {
 		INFOF("tcsetattr: error=%s\n", strerror(errno));
 		goto badarg;		
 	    }
@@ -1266,22 +1299,22 @@ again:
 		
 	case UART_CMD_BREAK: {
 	    int duration;
-	    if (ctx.fd < 0) goto ebadf;
+	    if (ctx.tty_fd < 0) goto ebadf;
 	    if (mp->used != 4) goto badarg;
 	    duration = (int) get_uint32((uint8_t*) mp->buffer);
-	    if (tcsendbreak(ctx.fd, duration) < 0)
+	    if (tcsendbreak(ctx.tty_fd, duration) < 0)
 		goto error;
 	    goto ok;
 	}
 	    
 	case UART_CMD_FLOW:
-	    if (ctx.fd < 0) goto ebadf;
+	    if (ctx.tty_fd < 0) goto ebadf;
 	    if (mp->used != 1) goto badarg;
 	    switch(mp->buffer[0]) {
-	    case 0: r = tcflow(ctx.fd, TCIOFF); break;
-	    case 1: r = tcflow(ctx.fd, TCION); break;
-	    case 2: r = tcflow(ctx.fd, TCOOFF); break;
-	    case 3: r = tcflow(ctx.fd, TCOON); break;
+	    case 0: r = tcflow(ctx.tty_fd, TCIOFF); break;
+	    case 1: r = tcflow(ctx.tty_fd, TCION); break;
+	    case 2: r = tcflow(ctx.tty_fd, TCOOFF); break;
+	    case 3: r = tcflow(ctx.tty_fd, TCOON); break;
 	    default: goto badarg; break;
 	    }
 	    if (r < 0)
