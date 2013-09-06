@@ -1,6 +1,6 @@
 #
 # Make the uart_drv
-# usage: TARGET=arm-none-linux-gnueabi make -f Makefile.cross
+# example usage: TARGET=arm-none-linux-gnueabi make -f Makefile.cross
 #
 
 OSNAME := $(shell uname -s)
