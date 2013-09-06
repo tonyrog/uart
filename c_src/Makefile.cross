@@ -1,0 +1,32 @@
+#
+# Make the uart_drv
+# usage: TARGET=arm-none-linux-gnueabi make -f Makefile.cross
+#
+
+OSNAME := $(shell uname -s)
+MACHINE := $(shell uname -m)
+ERLDIR	:= $(shell erl -noshell -eval "io:format([126,115,126,110],[code:root_dir()])" -s erlang halt)
+ERL_C_INCLUDE_DIR := $(ERLDIR)/usr/include
+CC = $(TARGET)-gcc
+LD = $(TARGET)-ld
+PRIVDIR=../priv
+DTHREAD=../../dthread
+
+OBJS = uart_drv.o uart_buf.o uart_queue.o uart_com_state.o \
+     uart_modem_state.o uart_options.o uart_message.o uart_unix.o 
+
+DTHREAD_DRV_OBJS = $(DTHREAD)/c_src/dlib.o \
+		 $(DTHREAD)/c_src/dterm.o \
+		 $(DTHREAD)/c_src/dthread.o
+
+LDFLAGS = -shared -fpic -lutil
+
+all : $(PRIVDIR)/uart_drv.so
+
+override CFLAGS += -Wall -Wextra -Wswitch-default -Wswitch-enum -I$(ERL_C_INCLUDE_DIR) -I $(DTHREAD)/include -DDLOG_DEFAULT=DLOG_NONE
+
+$(PRIVDIR)/uart_drv.so : $(OBJS)
+	$(CC) $(LDFLAGS) $(DTHREAD_DRV_OBJS) -o $@ $^
+
+lean:
+	$(RM) -f $(PRIVDIR)/uart_drv.so $(OBJS)

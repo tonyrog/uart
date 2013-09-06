@@ -889,6 +889,7 @@ int uart_recv_error(uart_ctx_t* ctx, int err)
 //
 int process_input(uart_ctx_t* ctx, dthread_t* self, int request_len)
 {
+    (void) self;
     int n;
     int len;
     int nread;
@@ -961,7 +962,7 @@ int process_input(uart_ctx_t* ctx, dthread_t* self, int request_len)
 				ctx->option.htype,
 				ctx->option.psize,
 				ctx->option.eolchar);
-	if (read < 0)
+	if (nread < 0)
 	    return uart_recv_error(ctx, EMSGSIZE);
 	else if (nread == 0)
 	    return uart_deliver(ctx, len);
