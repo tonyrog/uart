@@ -357,17 +357,17 @@ static void uart_drv_ready_input(ErlDrvData d, ErlDrvEvent e)
 	switch(mp->cmd) {
 	case DTHREAD_OUTPUT_TERM:
 	    DEBUGF("uart_drv: ready_input (OUTPUT_TERM)");
-	    driver_output_term(ctx->self.port, 
-			       (ErlDrvTermData*) mp->buffer,
-			       mp->used / sizeof(ErlDrvTermData));
+	    DOUTPUT_TERM(&ctx->self, 
+			 (ErlDrvTermData*) mp->buffer,
+			 mp->used / sizeof(ErlDrvTermData));
 	    break;
 	case DTHREAD_SEND_TERM:
 	    DEBUGF("uart_drv: ready_input (SEND_TERM)");
 	    // dterm_dump(stderr, (ErlDrvTermData*) mp->buffer,
 	    //   mp->used / sizeof(ErlDrvTermData));
-	    driver_send_term(ctx->self.port, mp->to, /* orignal from ! */
-			     (ErlDrvTermData*) mp->buffer,
-			     mp->used / sizeof(ErlDrvTermData)); 
+	    DSEND_TERM(&ctx->self, mp->to, /* orignal from ! */
+		       (ErlDrvTermData*) mp->buffer,
+		       mp->used / sizeof(ErlDrvTermData)); 
 	    break;
 	case DTHREAD_OUTPUT:
 	    DEBUGF("uart_drv: ready_input (OUTPUT)");
