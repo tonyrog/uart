@@ -217,7 +217,7 @@ open(DeviceName, Opts) ->
     Path = code:priv_dir(uart),
     {Type,_} = os:type(),
     Driver = "uart_drv",
-    case erl_ddll:load(Path, Driver) of
+    case load_driver(Path, Driver) of
 	ok ->
 	    Command =
 		case proplists:get_bool(ftdi, Opts) of
@@ -927,3 +927,21 @@ encode_flag(cd)  -> ?UART_CD;
 encode_flag(ri)  -> ?UART_RI;
 encode_flag(dsr) -> ?UART_DSR;
 encode_flag(sw) ->  ?UART_SW.
+
+%% can be replaced with dloader later
+load_driver(Path, Name) ->
+    Ext = filename:extension(Name),
+    Base = filename:basename(Name,Ext),
+    NameExt = case os:type() of
+		  {unix,_} ->  Base++".so";
+		  {win32,_} -> Base++".dll"
+	      end,
+    SysPath = filename:join(Path,erlang:system_info(system_architecture)),
+    case filelib:is_regular(filename:join(SysPath,NameExt)) of
+	true -> erl_ddll:load(SysPath, Name);
+	false ->
+	    case filelib:is_regular(filename:join(Path,NameExt)) of
+		true -> erl_ddll:load(Path, Name);
+		false -> {error, enoent}
+	    end
+    end.
