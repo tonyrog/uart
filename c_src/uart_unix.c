@@ -707,7 +707,7 @@ static int apply_opts(uart_ctx_t* ctx,
     if ((sflags & (1 << UART_OPT_DEVICE)) &&
 	(strcmp(option->device_name, ctx->option.device_name) != 0)) {
 	close_device(ctx);
-	sflags  = 0;
+	sflags &= ~(UART_OPT_COMM | (1 << UART_OPT_DEVICE));
 	if (open_device(ctx,option->device_name,sizeof(option->device_name))<0)
 	    return -1;
 #ifdef DEBUG
@@ -733,7 +733,7 @@ static int apply_opts(uart_ctx_t* ctx,
 	    // com_state_dump(stderr, state);
 	    if (set_com_state(ctx->tty_fd, state) < 0)
 		return -1;
-	    sflags = 0;
+	    sflags &= ~(UART_OPT_COMM);
 	    if (get_com_state(ctx->tty_fd, state) >= 0) {
 		// DEBUGF("set_opts: com_state: after");
 #ifdef DEBUG
@@ -750,6 +750,7 @@ static int apply_opts(uart_ctx_t* ctx,
 		DEBUGF("set_opts: ioctl TIOCPKT failed: %s", strerror(errno));
 	    }
 	}
+	sflags &= ~(1 << UART_OPT_PTYPKT);
     }
 
     old_active = ctx->option.active;

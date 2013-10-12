@@ -171,7 +171,7 @@ int uart_get_opts(dterm_t* t, uart_ctx_t* ctx, uint8_t* ptr, size_t len)
 			  ctx->option.send_timeout_close); 
 	    break;
 	case UART_OPT_PTYPKT:
-	    dterm_kv_uint(t,am_ptypkt, ctx->option.ptypkt); 
+	    dterm_kv_bool(t,am_ptypkt, ctx->option.ptypkt); 
 	    break;
 	case UART_OPT_BUFFER: 
 	    dterm_kv_uint(t,am_buffer, ctx->option.bsize);
