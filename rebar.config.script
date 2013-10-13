@@ -1,0 +1,8 @@
+%% -*- erlang -*-
+%% Config script file for uart-application
+case os:getenv("REBAR_DEPS") of
+    false -> CONFIG; % env var not defined
+    []    -> CONFIG; % env var set to empty string
+    Dir ->
+	lists:keystore(deps_dir, 1, CONFIG, {deps_dir, Dir})
+end.
