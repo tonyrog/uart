@@ -42,8 +42,8 @@ int uart_buf_alloc(uart_buf_t* bf, size_t sz)
 int uart_buf_expand(uart_buf_t* bf, size_t len)
 {
     uint8_t* base;
-    int offs1;
-    int offs2;
+    intptr_t offs1;
+    intptr_t offs2;
     size_t used = bf->ptr_start - bf->base;
     size_t ulen = used + len;
 
@@ -68,7 +68,7 @@ int uart_buf_expand(uart_buf_t* bf, size_t len)
 void uart_buf_restart(uart_buf_t* bf)
 {
     if (bf->ptr_start != bf->base) {
-	int n = bf->ptr - bf->ptr_start;
+	intptr_t n = bf->ptr - bf->ptr_start;
 	memmove(bf->base, bf->ptr_start, n);
 	bf->ptr_start = bf->base;
 	bf->ptr = bf->ptr_start + n;

@@ -180,7 +180,7 @@ int uart_get_opts(dterm_t* t, uart_ctx_t* ctx, uint8_t* ptr, size_t len)
 	    dterm_kv_bool(t,am_exit_on_close, ctx->option.exitf);
 	    break;
 	case UART_OPT_DEBUG:
-	    dterm_kv_int(t,am_debug, dlib_debug_level);
+	    dterm_kv_int(t,am_debug, dlog_debug_level);
 	    break;
 	default:
 	    break;
@@ -230,7 +230,7 @@ int uart_parse_opts(char* buf, ErlDrvSizeT len,
 		return -1;
 	    level = (int32_t) get_uint32(ptr);
 	    DEBUGF("option debug value=0x%08x", level);
-	    dlib_set_debug(level);
+	    dlog_set_debug(level);
 	    ptr += 4;
 	    break;
 	}
