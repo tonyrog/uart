@@ -80,6 +80,8 @@ ErlDrvTermData am_binary;
 ErlDrvTermData am_size;
 ErlDrvTermData am_line;
 ErlDrvTermData am_basic_0710;
+ErlDrvTermData am_advanced_0710;
+ErlDrvTermData am_gsm_0710;
 
 
 ErlDrvTermData am_ok;
@@ -182,6 +184,8 @@ static int uart_drv_init(void)
     INIT_ATOM(size);
     INIT_ATOM(line);
     INIT_ATOM(basic_0710);
+    INIT_ATOM(advanced_0710);
+    INIT_ATOM(gsm_0710);
     INIT_ATOM(debug);
 
 

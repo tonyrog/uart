@@ -191,11 +191,62 @@ int uart_buf_packet(uart_buf_t* bf, unsigned int htype, unsigned psize,
             return len;
         }
     }
+    case UART_PB_GSM_0710: {
+	// check for either BASIC or ADVANCED mode
+	if (n > 1) {
+	    if (ptr[0] == 0x7E) goto advanced_0710;
+	    if (ptr[0] == 0xF9) goto basic_0710;
+	    plen = 1;
+	    while(plen < n) {
+		if (ptr[plen] == 0x7D) // escape
+		    plen++;
+		else if ((ptr[plen] == 0x7E) ||
+			 (ptr[plen] == 0xF9))
+		    return plen;
+		    plen++;
+	    }
+	    return n;
+	}
+	goto more;
+    }
+
+    case UART_PB_ADVANCED_0710: {
+	advanced_0710:
+	// 0x7E <escaped data> 0x7E
+	if (n > 1) {
+	    if (ptr[0] == 0x7E) {
+		plen = 1;
+		while((plen < n) && (ptr[plen] != 0x7E)) {
+		    if (ptr[plen] == 0x7D) {  // escape
+			plen++;
+			if (plen == n)
+			    goto more;
+		    }
+		    plen++;
+		}
+		return plen+1;
+	    }
+	    else {
+		plen = 1;
+		while(plen < n) {
+		    if (ptr[plen] == 0x7D) // escape
+			plen++;
+		    else if (ptr[plen] == 0x7E)
+			return plen;
+		    plen++;
+		}
+		return n;
+	    }
+	}
+	goto more;
+    }
+
     case UART_PB_BASIC_0710: {
 	/* UART_BP_BASIC_0710:
 	   <<0xF9,Address,Control,Len:7,1:1,Data/Len,FCS,0xF9>>
 	   <<0xF9,Address,Control,L0:7,0:1,L1:8,Data/(L1<<7+L0),FCS,0xF9>>
 	*/
+	basic_0710:
 	if (n >= 6) {
 	    if (ptr[0] == 0xF9) {
 		if (ptr[3] & 0x1) { // short length
@@ -214,10 +265,10 @@ int uart_buf_packet(uart_buf_t* bf, unsigned int htype, unsigned psize,
 		}
 	    }
 	    else {
-		// scan fo 0xF9 or send error ? 
+		// scan for 0xF9 or send error ? 
 		plen = 1;
 		while(plen < n) {
-		    if (ptr[plen] != 0xF9)
+		    if (ptr[plen] == 0xF9)
 			return plen;  // deliver plen bytes!
 		    plen++;
 		}

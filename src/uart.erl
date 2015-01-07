@@ -77,10 +77,12 @@
 -define(UART_PB_FIXED_MASK,    16#FFFF0000). %% UART_PB_RAW
 -define(UART_PB_TYPE_MASK,     16#000000FF). %% UART_PB_x
 
--define(UART_PB_RAW,       0).
--define(UART_PB_N,         1).
--define(UART_PB_LINE_LF,   2).
--define(UART_PB_BASIC_0710,3).
+-define(UART_PB_RAW,           0).
+-define(UART_PB_N,             1).
+-define(UART_PB_LINE_LF,       2).
+-define(UART_PB_BASIC_0710,    3).
+-define(UART_PB_ADVANCED_0710, 4).
+-define(UART_PB_GSM_0710,      5).
 
 -define(UART_PASSIVE, 0).
 -define(UART_ACTIVE,  1).
@@ -688,6 +690,8 @@ validate_opt(header, Arg) -> is_integer(Arg) andalso (Arg >= 0);
 validate_opt(packet, {size,Sz}) -> is_uint16(Sz);
 validate_opt(packet, line) -> true;
 validate_opt(packet, basic_0710) -> true;
+validate_opt(packet, advanced_0710) -> true;
+validate_opt(packet, gsm_0710) -> true;
 validate_opt(packet, Arg) -> lists:member(Arg,lists:seq(-8,8));
 validate_opt(packet_size, Arg) -> is_uint32(Arg);
 validate_opt(deliver, Arg) -> lists:member(Arg,[port,term]);
@@ -784,7 +788,10 @@ encode_opt(packet,line) ->
     <<?UART_OPT_PACKET, ?UART_PB_LINE_LF:32>>;
 encode_opt(packet,basic_0710) ->
     <<?UART_OPT_PACKET, ?UART_PB_BASIC_0710:32>>;
-
+encode_opt(packet,advanced_0710) ->
+    <<?UART_OPT_PACKET, ?UART_PB_ADVANCED_0710:32>>;
+encode_opt(packet,gsm_0710) ->
+    <<?UART_OPT_PACKET, ?UART_PB_GSM_0710:32>>;
 
 encode_opt(device,Name) when is_list(Name); is_binary(Name) ->
     Bin = iolist_to_binary(Name),
@@ -858,6 +865,10 @@ encode_opt(packet,line) ->
     <<?UART_OPT_PACKET, ?UART_PB_LINE_LF:32>>;
 encode_opt(packet,basic_0710) ->
     <<?UART_OPT_PACKET, ?UART_PB_BASIC_0710:32>>;
+encode_opt(packet,advanced_0710) ->
+    <<?UART_OPT_PACKET, ?UART_PB_ADVANCED_0710:32>>;
+encode_opt(packet,gsm_0710) ->
+    <<?UART_OPT_PACKET, ?UART_PB_GSM_0710:32>>;
 encode_opt(high_watermark,X) when is_integer(X), X >= 0, X =< 16#ffffffff ->
     <<?UART_OPT_HIGH, X:32>>;    
 encode_opt(low_watermark,X) when is_integer(X), X >= 0, X =< 16#ffffffff ->
