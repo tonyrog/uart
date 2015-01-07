@@ -24,7 +24,6 @@
 #include <sys/ioctl.h>
 
 #include "uart_drv.h"
-#include "dthread.h"
 
 #if defined(__APPLE__)
 #include <util.h>

@@ -8,8 +8,6 @@
 #include <stdint.h>
 #include <stdarg.h>
 
-#include "dthread.h"
-#include "dlog.h"
 #include "uart_drv.h"
 
 typedef struct _drv_ctx_t

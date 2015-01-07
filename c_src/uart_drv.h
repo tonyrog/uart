@@ -8,8 +8,8 @@
 #include <stdint.h>
 
 #include "erl_driver.h"
-#include "dthread.h"
-#include "dlog.h"
+#include "dthread/include/dthread.h"
+#include "dthread/include/dlog.h"
 
 static inline uint32_t get_uint32(uint8_t* ptr)
 {

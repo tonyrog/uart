@@ -2,8 +2,6 @@
 // Option processing
 //
 #include "uart_drv.h"
-#include "dthread.h"
-
 
 // encode options [{opt,value}] into dterm
 int uart_get_opts(dterm_t* t, uart_ctx_t* ctx, uint8_t* ptr, size_t len)

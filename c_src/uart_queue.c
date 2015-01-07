@@ -2,7 +2,6 @@
 // Output queue processing
 //
 #include "uart_drv.h"
-#include "dthread.h"
 
 void uart_queue_init(uart_queue_t* q)
 {
