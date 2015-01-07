@@ -3,7 +3,6 @@
 //
 
 #include "uart_drv.h"
-#include "dthread.h"
 
 // Build a list of modem state flags
 int modem_state_dterm(dterm_t* t, uart_modem_state_t state)

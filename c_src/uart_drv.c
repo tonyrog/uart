@@ -8,7 +8,6 @@
 #include <stdint.h>
 #include <stdarg.h>
 
-#include "dthread.h"
 #include "uart_drv.h"
 
 typedef struct _drv_ctx_t
@@ -123,10 +122,10 @@ static ErlDrvSSizeT ctl_reply(int rep, char* buf, ErlDrvSizeT len,
 
 static int uart_drv_init(void)
 {
-    dlib_set_debug(DLOG_DEFAULT);
+    dlog_set_debug(DLOG_DEFAULT);
     DEBUGF("uart_driver_init");
     dthread_lib_init();
-    dlib_set_debug(DLOG_DEFAULT);
+    dlog_set_debug(DLOG_DEFAULT);
 
     INIT_ATOM(dtr);
     INIT_ATOM(rts);
