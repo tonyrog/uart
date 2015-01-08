@@ -1,6 +1,6 @@
 %% -*- erlang -*-
 %% Config script file for uart-application
-case os:getenv("REBAR_DEPS") of
+case os:getenv("REBAR_DEPS_DIR") of
     NoDir when NoDir == false; % env var not defined
 	       NoDir == [] ->  % env var set to empty string
 	os:putenv("DEPS_DIR", proplists:get_value(deps_dir, CONFIG, "deps")),
