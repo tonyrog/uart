@@ -153,6 +153,7 @@ static inline void put_uint32(uint8_t* ptr, uint32_t v)
 typedef struct {
     int ibaud;       // input baud rate (9600)
     int obaud;       // output baud rate (9600)
+    int baud;        // alternate baud
     int parity;      // parity (0)
     int stopb;       // stop bits (1)
     int csize;       // characters size  (8)

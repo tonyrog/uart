@@ -22,10 +22,14 @@
 #include <sys/stat.h>
 #include <sys/uio.h>
 #include <sys/ioctl.h>
+#ifdef __linux__
+#include <linux/serial.h>
+#endif
 
 #include "uart_drv.h"
 
 #if defined(__APPLE__)
+#include <IOKit/serial/ioss.h>
 #include <util.h>
 #define HAVE_PTY
 #else
@@ -120,11 +124,6 @@ static struct _rate {
 };
 
 
-#ifdef DARWIN
-#define HAVE_C_ISPEED 1
-#define HAVE_C_OSPEED 1
-#endif
-
 // save last error & return it
 static int uart_errno(uart_ctx_t* ctx)
 {
@@ -135,9 +134,6 @@ static int uart_errno(uart_ctx_t* ctx)
 
 static int from_speed(unsigned int speed)
 {
-#ifdef DIRECT_SPEED
-    return (int) speed;
-#else
     int i = 0;
     int baud;
 
@@ -145,14 +141,10 @@ static int from_speed(unsigned int speed)
 	i++;
     baud = rate_tab[i].baud;
     return baud;
-#endif
 }
 
 static unsigned int to_speed(int baud)
 {
-#ifdef DIRECT_SPEED
-    return (unsigned int) baud;
-#else
     int i = 0;
     int speed = 0;
     while((rate_tab[i].baud != -1) && (baud > rate_tab[i].baud))
@@ -162,7 +154,6 @@ static unsigned int to_speed(int baud)
     else 
 	speed = rate_tab[i].speed;
     return speed;
-#endif
 }
 
 
@@ -439,10 +430,10 @@ static int get_com_state(int fd, uart_com_state_t* com)
 {
     struct termios tio;
     
-    if (tcgetattr(fd, &tio) < 0) 
+    if (tcgetattr(fd, &tio) < 0)
 	return -1;
 
-    // input baud reate
+    // input baud rate
     com->ibaud = from_speed(cfgetispeed(&tio));
     com->obaud = from_speed(cfgetospeed(&tio));
 
@@ -509,9 +500,43 @@ static int get_com_state(int fd, uart_com_state_t* com)
     return 0;
 }
 
+static int set_baudrate(int fd, int baud)
+{
+#if defined(__APPLE__)
+    speed_t speed = baud;
+    if (ioctl(fd, IOSSIOSPEED, &speed) < 0) {
+	INFOF("ioctl: IOSSIOSPEED error=%s", strerror(errno));
+	return -1;
+    }
+    return speed;
+#elif defined(__linux__)
+    struct serial_struct serinfo;
+    int actual_rate;
+
+    if (ioctl(fd, TIOCGSERIAL, &serinfo) < 0) {
+	INFOF("ioctl: TIOCGSERIAL error=%s", strerror(errno));
+	return -1;
+    }
+    serinfo.flags &= ~ASYNC_SPD_MASK;
+    serinfo.flags |= ASYNC_SPD_CUST;
+    serinfo.custom_divisor = serinfo.baud_base / baud;
+    actual_rate = serinfo.baud_base / serinfo.custom_divisor;
+
+    if(ioctl(fd, TIOCSSERIAL, &serinfo) < 0) {
+	INFOF("ioctl: TIOCSSERIAL error=%s", strerror(errno));
+	return -1;
+    }
+    return actual_rate;
+#endif
+    return -1;
+}
+
+
 static int set_com_state(int fd, uart_com_state_t* com)
 {
     struct termios tio;
+    unsigned int ospeed, ispeed;
+    int obaud, ibaud;
 
     // read current state
     if (tcgetattr(fd, &tio) < 0) {
@@ -519,11 +544,26 @@ static int set_com_state(int fd, uart_com_state_t* com)
 	return -1;
     }
 
-    // On Mac os X IOSSIOSPEED can be used to set "non-traditional baud rate"
-    // From "IOKit/serial/ioss.h"
+    ispeed = to_speed(com->ibaud);
+    ospeed = to_speed(com->obaud);
 
-    cfsetispeed(&tio, to_speed(com->ibaud));
-    cfsetospeed(&tio, to_speed(com->obaud));
+    cfsetispeed(&tio, ispeed);
+    cfsetospeed(&tio, ospeed);
+
+    ibaud = from_speed(cfgetispeed(&tio));
+    obaud = from_speed(cfgetospeed(&tio));
+
+    if ((com->ibaud == com->obaud) && (com->ibaud != ibaud)) {
+	// try to set nonstandard baudrate
+	if ((com->baud = set_baudrate(fd, com->ibaud)) < 0) {
+	    WARNINGF("set_baudrate: unable to set baudrate = %d\n", com->ibaud);
+	    com->baud = 0;
+	}
+	else {
+	    DEBUGF("set_baudrate: non standard baud rate to %d from %d", 
+		   com->baud, com->ibaud);
+	}
+    }
 
     // update from state
     switch(com->parity) {
@@ -1298,13 +1338,13 @@ again:
 	    if (ctx.tty_fd < 0) goto ebadf;
 	    if (mp->used != 0) goto badarg;
 	    if ((r = tcgetattr(ctx.tty_fd, &tio)) < 0) {
-		INFOF("tcgetattr: error=%s\n", strerror(errno));
+		INFOF("tcgetattr: error=%s", strerror(errno));
 		goto badarg;
 	    }
 	    cfsetispeed(&tio, B0);
 	    cfsetospeed(&tio, B0);
 	    if ((r = tcsetattr(ctx.tty_fd, TCSANOW, &tio)) < 0) {
-		INFOF("tcsetattr: error=%s\n", strerror(errno));
+		INFOF("tcsetattr: error=%s", strerror(errno));
 		goto badarg;		
 	    }
 	    goto ok;
@@ -1315,8 +1355,20 @@ again:
 	    if (ctx.tty_fd < 0) goto ebadf;
 	    if (mp->used != 4) goto badarg;
 	    duration = (int) get_uint32((uint8_t*) mp->buffer);
-	    if (tcsendbreak(ctx.tty_fd, duration) < 0)
+#if defined(TIOCSBRK) && defined(TIOCCBRK)
+	    if (ioctl(ctx.tty_fd, TIOCSBRK, 0) < 0) {
+		INFOF("ioctl: TIOCSBRK error=%s", strerror(errno));
+		goto badarg;
+	    }
+	    usleep(duration);
+	    if (ioctl(ctx.tty_fd, TIOCCBRK, 0) < 0) {
+		INFOF("ioctl: TIOCSBRK error=%s", strerror(errno));
+		goto badarg;
+	    }
+#else
+	    if (tcsendbreak(ctx.tty_fd, duration*1000) < 0)
 		goto error;
+#endif
 	    goto ok;
 	}
 	    

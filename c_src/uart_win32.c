@@ -1131,7 +1131,7 @@ again:
 		DEBUG_ERROR("EscapeCommFunction: error %d", GetLastError());
 		goto error;
 	    }
-	    Sleep(duration);
+	    Sleep(duration*1000);
 	    if (!EscapeCommFunction(ctx.fh, CLRBREAK)) {
 		DEBUG_ERROR("EscapeCommFunction: error %d", GetLastError());
 		goto error;

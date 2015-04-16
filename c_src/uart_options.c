@@ -17,22 +17,28 @@ int uart_get_opts(dterm_t* t, uart_ctx_t* ctx, uint8_t* ptr, size_t len)
 	case UART_OPT_DEVICE:
 	    dterm_kv_string(t,am_device,ctx->option.device_name); 
 	    break;
-	case UART_OPT_IBAUD: 
-	    dterm_kv_uint(t,am_ibaud,ctx->state.ibaud);
+	case UART_OPT_IBAUD:
+	    if (ctx->state.baud)
+		dterm_kv_uint(t,am_ibaud,ctx->state.baud);
+	    else
+		dterm_kv_uint(t,am_ibaud,ctx->state.ibaud);
 	    break;
-	case UART_OPT_OBAUD: 
-	    dterm_kv_uint(t,am_obaud,ctx->state.obaud);  
+	case UART_OPT_OBAUD:
+	    if (ctx->state.baud)
+		dterm_kv_uint(t,am_obaud,ctx->state.baud);
+	    else
+		dterm_kv_uint(t,am_obaud,ctx->state.obaud);
 	    break;
-	case UART_OPT_CSIZE: 
+	case UART_OPT_CSIZE:
 	    dterm_kv_uint(t,am_csize, ctx->state.csize);  
 	    break;
-	case UART_OPT_BUFSZ: 
+	case UART_OPT_BUFSZ:
 	    dterm_kv_uint(t,am_bufsz, ctx->state.bufsz); 
 	    break;
-	case UART_OPT_BUFTM: 
+	case UART_OPT_BUFTM:
 	    dterm_kv_uint(t,am_buftm, ctx->state.buftm);  
 	    break;
-	case UART_OPT_STOPB: 
+	case UART_OPT_STOPB:
 	    dterm_kv_uint(t,am_stopb, ctx->state.stopb);  
 	    break;
 	case UART_OPT_PARITY:

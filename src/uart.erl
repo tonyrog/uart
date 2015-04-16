@@ -12,7 +12,7 @@
 -export([recv/2, recv/3]).
 -export([async_recv/2, async_recv/3, async_send/2]).
 -export([unrecv/2]).
--export([break/2, hangup/1, flow/2]).
+-export([ubreak/2, break/2, hangup/1, flow/2]).
 -export([get_modem/1, set_modem/2, clear_modem/2]).
 -export([options/0, validate_opts/1, validate_opt/2]).
 -export([setopt/3, setopts/2]).
@@ -351,6 +351,17 @@ setopts(Uart, Opts) when ?is_uart(Uart), is_list(Opts) ->
 
 %%--------------------------------------------------------------------
 %% @doc
+%%   Send break for Duration number of microseconds .
+%% @end
+%%--------------------------------------------------------------------
+-spec ubreak(Uart::uart(), Duration::non_neg_integer()) ->
+		    ok | {error,term()}.
+ubreak(Uart,Duration) when ?is_uart(Uart),
+			   is_integer(Duration), Duration > 0 ->
+    command(Uart, ?UART_CMD_BREAK, <<Duration:32>>).
+
+%%--------------------------------------------------------------------
+%% @doc
 %%   Send break for Duration number of milliseconds .
 %% @end
 %%--------------------------------------------------------------------
@@ -358,7 +369,7 @@ setopts(Uart, Opts) when ?is_uart(Uart), is_list(Opts) ->
 		   ok | {error,term()}.
 break(Uart,Duration) when ?is_uart(Uart),
 			  is_integer(Duration), Duration > 0 ->
-    command(Uart, ?UART_CMD_BREAK, <<Duration:32>>).
+    ubreak(Uart, Duration*1000).
 
 %%--------------------------------------------------------------------
 %% @doc
