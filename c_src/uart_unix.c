@@ -536,7 +536,8 @@ static int set_com_state(int fd, uart_com_state_t* com)
 {
     struct termios tio;
     unsigned int ospeed, ispeed;
-    int obaud, ibaud;
+    // int obaud;
+    int ibaud;
 
     // read current state
     if (tcgetattr(fd, &tio) < 0) {
@@ -551,7 +552,7 @@ static int set_com_state(int fd, uart_com_state_t* com)
     cfsetospeed(&tio, ospeed);
 
     ibaud = from_speed(cfgetispeed(&tio));
-    obaud = from_speed(cfgetospeed(&tio));
+    // obaud = from_speed(cfgetospeed(&tio));
 
     if ((com->ibaud == com->obaud) && (com->ibaud != ibaud)) {
 	// try to set nonstandard baudrate
