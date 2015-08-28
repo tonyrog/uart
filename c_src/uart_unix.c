@@ -399,17 +399,23 @@ error:
 
 static void close_device(uart_ctx_t* ctx)
 {
-    if (ctx->fd != ctx->tty_fd) {
+    if ((ctx->fd == ctx->tty_fd) && (ctx->tty_fd >= 0)) {
+	DEBUGF("close_device: fd=%d", ctx->tty_fd);
+	close(ctx->tty_fd);
+	ctx->tty_fd = -1;
+	ctx->fd = -1;
+    }
+    else {
+	if (ctx->tty_fd >= 0) {
+	    DEBUGF("close_device: fd=%d", ctx->tty_fd);
+	    close(ctx->tty_fd);
+	    ctx->tty_fd = -1;
+	}
 	if (ctx->fd >= 0) {
 	    DEBUGF("close_device: master=%d", ctx->fd);
 	    close(ctx->fd);
 	    ctx->fd = -1;
 	}
-    }
-    if (ctx->tty_fd >= 0) {
-	DEBUGF("close_device: fd=%d", ctx->tty_fd);
-	close(ctx->tty_fd);
-	ctx->tty_fd = -1;
     }
 }
 
