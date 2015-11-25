@@ -12,7 +12,7 @@
 -export([recv/2, recv/3]).
 -export([async_recv/2, async_recv/3, async_send/2]).
 -export([unrecv/2]).
--export([ubreak/2, break/2, hangup/1, flow/2]).
+-export([ubreak/2, break/2, hangup/1, flow/2, flush/2]).
 -export([get_modem/1, set_modem/2, clear_modem/2]).
 -export([options/0, validate_opts/1, validate_opt/2]).
 -export([setopt/3, setopts/2]).
@@ -27,6 +27,7 @@
 -define(UART_CMD_HANGUP,    2).
 -define(UART_CMD_CLOSE,     4).
 -define(UART_CMD_FLOW,      5).
+-define(UART_CMD_FLUSH,     6).
 -define(UART_CMD_BREAK,     7).
 -define(UART_CMD_SETOPTS,   8).
 -define(UART_CMD_GETOPTS,   9).
@@ -397,6 +398,21 @@ flow(Uart, output_off) when ?is_uart(Uart) ->
     command(Uart, ?UART_CMD_FLOW, [2]);
 flow(Uart, output_on) when ?is_uart(Uart) ->
     command(Uart, ?UART_CMD_FLOW, [3]).
+
+%%--------------------------------------------------------------------
+%% @doc
+%%   Flush input and output data
+%% @end
+%%--------------------------------------------------------------------
+-spec flush(Uart::uart(), Action::(input|output|both)) ->
+		   ok | {error,term()}.
+
+flush(Uart, input) when ?is_uart(Uart) ->
+    command(Uart, ?UART_CMD_FLUSH, [1]);
+flush(Uart, output) when ?is_uart(Uart) ->
+    command(Uart, ?UART_CMD_FLUSH, [2]);
+flush(Uart, both) when ?is_uart(Uart) ->
+    command(Uart, ?UART_CMD_FLUSH, [3]).
 
 %%--------------------------------------------------------------------
 %% @doc

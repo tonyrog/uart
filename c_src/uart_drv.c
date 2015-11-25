@@ -296,6 +296,7 @@ static char* format_command(int cmd)
     case UART_CMD_HANGUP:    return "hangup";
     case UART_CMD_CLOSE:     return "close";
     case UART_CMD_FLOW:      return "flow";
+    case UART_CMD_FLUSH:     return "flush";
     case UART_CMD_BREAK:     return "break";
     case UART_CMD_SETOPTS:   return "setopts";
     case UART_CMD_GETOPTS:   return "getopts";

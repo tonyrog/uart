@@ -1166,6 +1166,35 @@ again:
 	    }
 	    goto ok;
 
+	case UART_CMD_FLUSH:
+	    if (ctx.fh == INVALID_HANDLE_VALUE) goto ebadf;
+	    if (mp->used != 1) goto badarg;
+	    switch(mp->buffer[0]) {
+	    case 1:
+		if (!PurgeComm(ctx.fh, PURGE_RXCLEAR)) {
+		    // add PURGE_RXABORT?
+		    DEBUG_ERROR("EscapeCommFunction: error %d", GetLastError());
+		    goto error;
+		}
+		break;
+	    case 2:
+		if (!PurgeComm(ctx.fh, PURGE_TXCLEAR)) {
+		    // add PURGE_TXABORT?
+		    DEBUG_ERROR("EscapeCommFunction: error %d", GetLastError());
+		    goto error;
+		}
+		break;
+	    case 3:
+		if (!PurgeComm(ctx.fh, PURGE_RXCLEAR|PURGE_TXCLEAR)) {
+		    DEBUG_ERROR("EscapeCommFunction: error %d", GetLastError());
+		    goto error;
+		}
+		break;
+	    default: 
+		goto badarg;
+	    }
+	    goto ok;
+
 	default:
 	    goto badarg;
 	}

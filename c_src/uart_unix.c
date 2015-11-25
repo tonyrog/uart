@@ -1393,6 +1393,19 @@ again:
 		goto error;
 	    goto ok;
 
+	case UART_CMD_FLUSH:
+	    if (ctx.tty_fd < 0) goto ebadf;
+	    if (mp->used != 1) goto badarg;
+	    switch(mp->buffer[0]) {
+	    case 1: r = tcflush(ctx.tty_fd, TCIFLUSH); break;
+	    case 2: r = tcflush(ctx.tty_fd, TCOFLUSH); break;
+	    case 3: r = tcflush(ctx.tty_fd, TCIOFLUSH); break;
+	    default: goto badarg; break;
+	    }
+	    if (r < 0)
+		goto error;
+	    goto ok;
+
 	default:
 	    goto badarg;
 	}

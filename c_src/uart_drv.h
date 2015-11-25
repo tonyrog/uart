@@ -48,6 +48,7 @@ static inline void put_uint32(uint8_t* ptr, uint32_t v)
 #define UART_CMD_HANGUP     2
 #define UART_CMD_CLOSE      4
 #define UART_CMD_FLOW       5
+#define UART_CMD_FLUSH      6
 #define UART_CMD_BREAK      7
 #define UART_CMD_SETOPTS    8
 #define UART_CMD_GETOPTS    9
