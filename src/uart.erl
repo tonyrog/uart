@@ -247,6 +247,7 @@ open(DeviceName, Opts) ->
 %% @doc List information about open uart ports
 %% @end
 %%--------------------------------------------------------------------
+-spec i() -> 'ok'.
 
 i() ->
     Us = lists:filter(
@@ -457,7 +458,7 @@ clear_modem(Uart, Fs) when ?is_uart(Uart), is_list(Fs) ->
 %% @end
 %%--------------------------------------------------------------------
 
--spec send(Uart::uart(), Data::iolist()) ->
+-spec send(Uart::uart(), Data::iolist() | binary()) ->
 		  ok | {error, term()}.
 
 send(Port, [C]) when is_port(Port), ?is_uint8(C) ->
@@ -485,7 +486,7 @@ send_char(Port, C) when ?is_uart(Port), ?is_uint8(C) ->
 %%   Send asynchronous data.
 %% @end
 %%--------------------------------------------------------------------
--spec async_send(Uart::uart(), Data::iolist()) -> ok.
+-spec async_send(Uart::uart(), Data::iolist() | binary()) -> ok.
 
 async_send(Port, Data) ->
     true = erlang:port_command(Port, Data),
@@ -496,7 +497,7 @@ async_send(Port, Data) ->
 %%   Push back data onto the receive buffer.
 %% @end
 %%--------------------------------------------------------------------
--spec unrecv(Uart::uart(), Data::iolist()) ->
+-spec unrecv(Uart::uart(), Data::iolist() | binary()) ->
 		    ok | {error,term()}.
 
 unrecv(Port, Data) when is_list(Data); is_binary(Data)  ->
@@ -508,7 +509,7 @@ unrecv(Port, Data) when is_list(Data); is_binary(Data)  ->
 %% @end
 %%--------------------------------------------------------------------    
 -spec recv(Uart::uart(), Length::non_neg_integer()) ->
-		  {ok,iolist()} | {error, term()}.
+		  {ok,iolist() | binary()} | {error, term()}.
     
 recv(Port, Length) ->
     recv_(Port, Length, -1).
@@ -519,7 +520,7 @@ recv(Port, Length) ->
 %% @end
 %%--------------------------------------------------------------------    
 -spec recv(Uart::uart(), Length::non_neg_integer(), Timeout::timeout()) ->
-		  {ok,iolist()} | {error, term()}.
+		  {ok,iolist() | binary()} | {error, term()}.
 
 recv(Uart, Length, infinity) ->
     recv_(Uart, Length, -1);
