@@ -32,6 +32,9 @@
 #include <IOKit/serial/ioss.h>
 #include <util.h>
 #define HAVE_PTY
+#elif defined(__FreeBSD__)
+#include <libutil.h>
+#define HAVE_PTY
 #else
 #include <pty.h>
 #define HAVE_PTY
