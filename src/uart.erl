@@ -949,6 +949,7 @@ encode_opt(packet) ->  ?UART_OPT_PACKET;
 encode_opt(packet_size) ->  ?UART_OPT_PSIZE;
 encode_opt(deliver)     ->  ?UART_OPT_DELIVER;
 encode_opt(mode)     ->  ?UART_OPT_MODE;
+encode_opt(exclusive)     ->  ?UART_OPT_EXCLUSIVE;
 encode_opt(high_watermark) -> ?UART_OPT_HIGH;
 encode_opt(low_watermark) -> ?UART_OPT_LOW;
 encode_opt(send_timeout) -> ?UART_OPT_SENDTMO;

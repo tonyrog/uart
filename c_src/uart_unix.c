@@ -328,8 +328,35 @@ int local_openpt(int oflag)
 }
 #endif
 
+static int set_exclusive(int fd, int on)
+{
+#ifdef TIOCEXCL
+    if (on) {
+	if (ioctl(fd, TIOCEXCL, NULL) < 0) {
+	    DEBUGF("set exclusive mode failed: %s\r\n", strerror(errno));
+	    return -1;
+	}
+	else {
+	    DEBUGF("set exclusive mode ok\r\n");
+	}
+    }
+#endif
+#ifdef TIOCNXCL
+    if (!on) {
+	if (ioctl(fd, TIOCNXCL, NULL) < 0) {
+	    DEBUGF("clear exclusive mode failed: %s\r\n", strerror(errno));
+	    return -1;
+	}
+	else {
+	    DEBUGF("clear exclusive mode ok\r\n");
+	}
+    }
+#endif
+    return 0;
+}
 
-static int open_device(uart_ctx_t* ctx, char* name, size_t max_namelen)
+static int open_device(uart_ctx_t* ctx, char* name, size_t max_namelen,
+		       int exclusive)
 {
     int flags;
     int tty_fd = -1;
@@ -343,12 +370,6 @@ static int open_device(uart_ctx_t* ctx, char* name, size_t max_namelen)
 	    DEBUGF("posix_openpt failed : %s", strerror(errno));
 	    return -1;
 	}
-#ifdef TIOCEXCL
-	if (ctx->option.exclusive) {
-	    if (ioctl(fd, TIOCEXCL, NULL) < 0)
-		goto error;
-	}
-#endif
 	if (grantpt(fd) < 0) {
 	    DEBUGF("grantpt failed : %s", strerror(errno));
 	    goto error;
@@ -381,14 +402,10 @@ static int open_device(uart_ctx_t* ctx, char* name, size_t max_namelen)
     }
     if ((tty_fd = open(name, O_RDWR|O_NDELAY|O_NOCTTY)) < 0)
 	goto error;
-#ifdef TIOCEXCL
-    if (ctx->option.exclusive) {
-	if (ioctl(tty_fd, TIOCEXCL, NULL) < 0)
+    if (exclusive) {
+	if (set_exclusive(tty_fd, 1) < 0)
 	    goto error;
     }
-#else
-#warning "no TIOCEXCL support"
-#endif
     // non-blocking!!!
     if ((flags = fcntl(tty_fd, F_GETFL, 0)) < 0) {
 	DEBUGF("fcntl: F_GETFL tty_fd failed : %s", strerror(errno));
@@ -769,9 +786,15 @@ static int apply_opts(uart_ctx_t* ctx,
 
     if ((sflags & (1 << UART_OPT_DEVICE)) &&
 	(strcmp(option->device_name, ctx->option.device_name) != 0)) {
+	int exclusive = 0;
 	close_device(ctx);
 	sflags &= ~(UART_OPT_COMM | (1 << UART_OPT_DEVICE));
-	if (open_device(ctx,option->device_name,sizeof(option->device_name))<0)
+	if (sflags & (1 << UART_OPT_EXCLUSIVE)) {
+	    exclusive = option->exclusive;
+	    sflags &= ~(1 << UART_OPT_EXCLUSIVE);
+	}
+	if (open_device(ctx,option->device_name,sizeof(option->device_name),
+			exclusive) < 0)
 	    return -1;
 #ifdef DEBUG
 	// com_state_dump(stderr, state);
@@ -814,6 +837,11 @@ static int apply_opts(uart_ctx_t* ctx,
 	    }
 	}
 	sflags &= ~(1 << UART_OPT_PTYPKT);
+    }
+
+    if (sflags & (1 << UART_OPT_EXCLUSIVE)) {
+	set_exclusive(ctx->tty_fd, option->exclusive);
+	sflags &= ~(1 << UART_OPT_EXCLUSIVE);
     }
 
     old_active = ctx->option.active;
