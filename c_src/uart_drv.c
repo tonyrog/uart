@@ -53,6 +53,7 @@ ErlDrvTermData am_active;
 ErlDrvTermData am_delay_send;
 ErlDrvTermData am_deliver;
 ErlDrvTermData am_mode;
+ErlDrvTermData am_exclusive;
 ErlDrvTermData am_header;
 ErlDrvTermData am_packet;
 ErlDrvTermData am_packet_size;
@@ -153,6 +154,7 @@ static int uart_drv_init(void)
     INIT_ATOM(delay_send);
     INIT_ATOM(deliver);
     INIT_ATOM(mode);
+    INIT_ATOM(exclusive);
     INIT_ATOM(header);
     INIT_ATOM(packet);
     INIT_ATOM(packet_size);

@@ -338,11 +338,17 @@ static int open_device(uart_ctx_t* ctx, char* name, size_t max_namelen)
     if (strcmp(name, "//pty") == 0) {
 #ifdef HAVE_PTY
 	char slave_name[UART_MAX_DEVICE_NAME];
-	
+
 	if ((fd = local_openpt(O_RDWR|O_NOCTTY)) < 0) { 
 	    DEBUGF("posix_openpt failed : %s", strerror(errno));
 	    return -1;
 	}
+#ifdef TIOCEXCL
+	if (ctx->option.exclusive) {
+	    if (ioctl(fd, TIOCEXCL, NULL) < 0)
+		goto error;
+	}
+#endif
 	if (grantpt(fd) < 0) {
 	    DEBUGF("grantpt failed : %s", strerror(errno));
 	    goto error;
@@ -375,6 +381,14 @@ static int open_device(uart_ctx_t* ctx, char* name, size_t max_namelen)
     }
     if ((tty_fd = open(name, O_RDWR|O_NDELAY|O_NOCTTY)) < 0)
 	goto error;
+#ifdef TIOCEXCL
+    if (ctx->option.exclusive) {
+	if (ioctl(tty_fd, TIOCEXCL, NULL) < 0)
+	    goto error;
+    }
+#else
+#warning "no TIOCEXCL support"
+#endif
     // non-blocking!!!
     if ((flags = fcntl(tty_fd, F_GETFL, 0)) < 0) {
 	DEBUGF("fcntl: F_GETFL tty_fd failed : %s", strerror(errno));
@@ -395,7 +409,7 @@ error:
 	int save_errno = errno;
 	if (fd >= 0) close(fd);
 	if ((fd != tty_fd) && (tty_fd >= 0)) close(tty_fd);
-	errno = save_errno;	    
+	errno = save_errno;
     }
     return -1;
 }

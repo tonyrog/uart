@@ -136,7 +136,7 @@ static inline void put_uint32(uint8_t* ptr, uint32_t v)
 #define UART_OPT_DELAY_SEND 16
 #define UART_OPT_DELIVER    17
 #define UART_OPT_MODE       18
-// #define UART_OPT_19   19
+#define UART_OPT_EXCLUSIVE  19
 #define UART_OPT_HEADER     20
 #define UART_OPT_PACKET     21
 #define UART_OPT_PSIZE      22
@@ -203,6 +203,7 @@ extern ErlDrvTermData am_active;
 extern ErlDrvTermData am_delay_send;
 extern ErlDrvTermData am_deliver;
 extern ErlDrvTermData am_mode;
+extern ErlDrvTermData am_exclusive;
 extern ErlDrvTermData am_header;
 extern ErlDrvTermData am_packet;
 extern ErlDrvTermData am_packet_size;
@@ -273,6 +274,7 @@ typedef struct {
     unsigned int bsize;              // input buffer size (buffer)
     int          exitf;              // exit on error
     int          ptypkt;             // pty packet mode
+    int          exclusive;          // exclusive access
 } uart_opt_t;
 
 

@@ -113,6 +113,13 @@ int uart_get_opts(dterm_t* t, uart_ctx_t* ctx, uint8_t* ptr, size_t len)
 	    }
 	    break;
 
+	case UART_OPT_EXCLUSIVE:
+	    switch (ctx->option.exclusive) {
+	    case 0: dterm_kv_atom(t,am_exclusive, am_false); break;
+	    default: dterm_kv_atom(t,am_exclusive, am_true); break;
+	    }
+	    break;
+
 	case UART_OPT_HEADER: 
 	    dterm_kv_uint(t,am_header,ctx->option.hsz);
 	    break;
@@ -260,6 +267,7 @@ int uart_parse_opts(char* buf, ErlDrvSizeT len,
 	case UART_OPT_DELAY_SEND: GET_UINT32(option->delay_send); break;
 	case UART_OPT_DELIVER:  GET_UINT32(option->deliver); break;
 	case UART_OPT_MODE:     GET_UINT32(option->mode); break;
+	case UART_OPT_EXCLUSIVE: GET_UINT32(option->exclusive); break;
 	case UART_OPT_HEADER:   GET_UINT32(option->hsz); break;
 	case UART_OPT_PACKET:   GET_UINT32(option->htype); break;
 	case UART_OPT_PSIZE:    GET_UINT32(option->psize); break;

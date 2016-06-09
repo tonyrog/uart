@@ -59,7 +59,7 @@
 -define(UART_OPT_DELAY_SEND, 16).
 -define(UART_OPT_DELIVER, 17).
 -define(UART_OPT_MODE, 18).
-%% -define(UART_OPT_19,    19).
+-define(UART_OPT_EXCLUSIVE, 19).
 -define(UART_OPT_HEADER, 20).
 -define(UART_OPT_PACKET, 21).
 -define(UART_OPT_PSIZE, 22).
@@ -875,6 +875,10 @@ encode_opt(deliver,term) ->
     <<?UART_OPT_DELIVER, ?UART_DELIVER_TERM:32>>;
 encode_opt(mode,list) ->
     <<?UART_OPT_MODE, ?UART_MODE_LIST:32>>;
+encode_opt(exclusive,true) ->
+    <<?UART_OPT_EXCLUSIVE, 1:32>>;
+encode_opt(exclusive,false) ->
+    <<?UART_OPT_EXCLUSIVE, 0:32>>;
 encode_opt(mode,binary) ->
     <<?UART_OPT_MODE, ?UART_MODE_BINARY:32>>;
 
