@@ -7,7 +7,7 @@
 
 -module(uart).
 
--export([open/2, close/1]).
+-export([open/2, open1/2, close/1]).
 -export([send/2, send_char/2]).
 -export([recv/2, recv/3]).
 -export([async_recv/2, async_recv/3, async_send/2]).
@@ -205,6 +205,28 @@ options() ->
     ].
 
 %%--------------------------------------------------------------------
+%% @doc Opens a tty device using wildcard matching.
+%%   open1 allows to use wildcard matching when open a device
+%%   this allows configfiles to handle environments that vary 
+%%   with usb serial numbers etc. open1 will fail if more
+%%   or less than one device match. See filelib:wildcard/1 for
+%%   information about allowed patterns.
+%% @end
+%%--------------------------------------------------------------------
+-spec open1(DevicePattern::string(), Options::[{uart_option(),term()}]) ->
+		   {ok,uart()} | {error,term()}.
+
+open1(DeviceName="//pty", Opts) -> %% special
+    open(DeviceName, Opts);
+open1(DevicePattern, Opts) ->
+    case filelib:wildcard(DevicePattern) of
+	[] -> {error, enoent};
+	[_,_|_] -> {error, erange}; %% too many files matching
+	[DeviceName] -> open(DeviceName, Opts);
+	_ -> {error, badarg}
+    end.
+
+%%--------------------------------------------------------------------
 %% @doc Opens a tty device.
 %%
 %%   The device name `//pty' is reserved for opening a pseudo terminal
@@ -213,7 +235,7 @@ options() ->
 %%   available options.
 %% @end
 %%--------------------------------------------------------------------
--spec open(DeviceName::iolist(), Options::[{uart_option(),term()}]) ->
+-spec open(DeviceName::string(), Options::[{uart_option(),term()}]) ->
 		  {ok,uart()} | {error,term()}.
 
 open(DeviceName, Opts) ->
