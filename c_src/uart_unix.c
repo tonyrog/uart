@@ -1418,6 +1418,11 @@ again:
 		goto badarg;
 	    }
 #else
+#warning "using tcsendbreak, duration is not defined"
+	    // duration is not really defined for tcsendbreak
+	    // on macos x (according to manual) it will send
+	    // a zeros for 400 ms ( regardless of duration value )
+	    // on linux and posix it is totally confused
 	    if (tcsendbreak(ctx.tty_fd, duration*1000) < 0)
 		goto error;
 #endif
