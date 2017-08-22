@@ -686,8 +686,8 @@ static int set_com_state(int fd, uart_com_state_t* com)
     else if (!(com->iflow & UART_RTS) && !(com->oflow & UART_CTS))
 	tio.c_cflag &= ~CRTSCTS;
 #endif
-    // ignore break condition
-    tio.c_iflag |= IGNBRK;
+    // remove input translations
+    tio.c_iflag &= ~(IGNBRK | BRKINT | ICRNL | IGNCR | INLCR);
 
     // local line + enable receiver
     tio.c_cflag |= (CLOCAL | CREAD);
