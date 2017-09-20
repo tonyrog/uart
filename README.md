@@ -37,6 +37,13 @@ $ git clone git://github.com/tonyrog/uart.git
 ### Configurating
 #### Concepts
 
+Hint on how to set low latency timer when using usb-serial (ftdi_sio)
+on linux.
+The latency_timer can be set using (as root):
+
+
+    #echo 1 > /sys/bus/usb-serial/devices/<tty-name>
+
 ...
 
 #### Files
