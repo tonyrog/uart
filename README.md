@@ -42,7 +42,7 @@ on linux.
 The latency_timer can be set using (as root):
 
 
-    #echo 1 > /sys/bus/usb-serial/devices/<tty-name>
+    #echo 1 > /sys/bus/usb-serial/devices/<tty-name>/latency_timer
 
 ...
 
