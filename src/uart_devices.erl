@@ -25,7 +25,8 @@
 	 terminate/2, code_change/3]).
 
 -define(SERVER, ?MODULE). 
--define(debug(F,A), ok).  % io:format((F),(A))
+-define(debug(F,A), ok).  
+%%-define(debug(F,A), io:format((F),(A))).
 
 -record(uart_device,
 	{
@@ -240,7 +241,8 @@ handle_cast({update_id,Name}, State) ->
     IDs = list_serial_devices(),
     ?debug("Lookup ~s in ~p\n", [Name, IDs]),
     case lists:keyfind(Name, 1, IDs) of
-	false -> false;  %% not a serial device
+	false -> 
+	    {noreply, State};  %% not a serial device?
 	{_,ID} ->
 	    case lists:keytake(Name,#uart_device.name,State#state.devices) of
 		false ->
@@ -383,10 +385,10 @@ list_uart_devices() ->
 	    []
     end.
 
-%% list serial devices on linux - return [{Name,ID}]
+%% list plug serial devices on linux - return [{Name,ID}]
 list_serial_devices() ->
     Path = "/dev/serial/by-id",
-    case file:list_dir(Path) of 
+    case file:list_dir(Path) of
 	{ok,Fs} ->
 	    ?debug("/dev/serial/by-ids = ~p\n",[Fs]),
 	    lists:foldl(
@@ -405,7 +407,7 @@ list_serial_devices() ->
 	    ?debug("/dev/serial/by-ids = ~p\n",[_E]),
 	    []
     end.
-	
+
 
 is_uart_device(Path,Name) ->  %% fixme check fileinfo
     case os:type() of
@@ -470,7 +472,7 @@ lookup_device_id(Name) ->
 	    %% when a devices is created in /dev we "need"/want to 
 	    %% find that device under /dev/serial/by-id to be sure
 	    %% the device is a serial device.
-	    cast_after(1000, {update_id,Name}),
+	    cast_after(2000, {update_id,Name}),
 	    Name;
 	_ ->
 	    Name
