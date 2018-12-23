@@ -419,6 +419,7 @@ DRIVER_INIT(uart_drv)
 
     DEBUGF("driver_init");
 
+    memset(ptr, 0, sizeof(ErlDrvEntry));
     ptr->init  = uart_drv_init;
     ptr->start = uart_drv_start;
     ptr->stop  = uart_drv_stop;
@@ -433,7 +434,6 @@ DRIVER_INIT(uart_drv)
     ptr->major_version = ERL_DRV_EXTENDED_MAJOR_VERSION;
     ptr->minor_version = ERL_DRV_EXTENDED_MINOR_VERSION;
     ptr->driver_flags = ERL_DRV_FLAG_USE_PORT_LOCKING;
-    ptr->process_exit = 0;
     ptr->stop_select = uart_drv_stop_select;
     return ptr;
 }
