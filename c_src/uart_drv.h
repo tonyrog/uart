@@ -8,8 +8,8 @@
 #include <stdint.h>
 
 #include "erl_driver.h"
-#include "dthread/include/dthread.h"
-#include "dthread/include/dlog.h"
+#include "dthread.h"
+#include "dlog.h"
 
 static inline uint32_t get_uint32(uint8_t* ptr)
 {
@@ -345,9 +345,11 @@ typedef struct _uart_ctx_t
     dthread_t*     other;       // current calling thread
 
     uart_queue_t   oq;          // Output queue 
-    uart_buf_t     ib;          // Input buffer 
-    ErlDrvNowData  t0;          // point at start of operations
-    ErlDrvNowData* tp;         //  if tmo then point to t0!
+    uart_buf_t     ib;          // Input buffer
+    ErlDrvTime     t0;
+    ErlDrvTime*    tp;
+//    ErlDrvNowData  t0;          // point at start of operations
+//    ErlDrvNowData* tp;         //  if tmo then point to t0!
     uint32_t       tmo;        //  timeout value in (ms)
 } uart_ctx_t;
 

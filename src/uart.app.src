@@ -1,7 +1,7 @@
 {application, uart,
  [{description, "UART device controller"},
   {vsn, git},
-  {modules, [uart]},
+  {modules, ["@@MODULES@@"]},
   {registered, []},
   {env, []},
   {applications,[kernel,stdlib]}

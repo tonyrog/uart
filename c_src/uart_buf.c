@@ -203,7 +203,7 @@ int uart_buf_packet(uart_buf_t* bf, unsigned int htype, unsigned psize,
 		else if ((ptr[plen] == 0x7E) ||
 			 (ptr[plen] == 0xF9))
 		    return plen;
-		    plen++;
+		plen++;
 	    }
 	    return n;
 	}

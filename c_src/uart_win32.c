@@ -109,49 +109,13 @@ static DWORD to_speed(int baud)
 // t1 - t0 - t1 MUST be greater equal to t0 (later in time)
 // or 0 is returned
 //
-unsigned long diff_time_ms(ErlDrvNowData* t1, ErlDrvNowData* t0)
+unsigned long diff_time_ms(ErlDrvTime* t1, ErlDrvTime* t0)
 {
-    unsigned long dm,ds,du;
-    unsigned long d = 0;
-    unsigned long b;
     unsigned long t;
-
-    if (t1->microsecs >= t0->microsecs) {
-	du = t1->microsecs - t0->microsecs;
-	b = 0;
-    }
-    else {
-	du = (1000000 + t1->microsecs) - t0->microsecs;
-	b = 1;
-    }
-
-    t = t0->secs+b;
-    if (t1->secs >= t) {
-	ds = t1->secs - t;
-	b = 0;
-    }
-    else {
-	ds = (t1->secs+1000000) - t;
-	b = 1;
-    }
-
-    t = t0->megasecs+b;
-    if (t1->megasecs >= t) {
-	dm = t1->megasecs - t;
-	b = 0;
-    }
-    else {
-	dm = (t1->megasecs+1000000) - t;
-	b = 1;
-    }
-    if (b == 1)
+    if (*t1 < *t0)
 	return 0;
-    d = du/1000;
-    if (ds)
-	d += ds*1000;
-    if (dm) 
-	d += dm*1000000000;
-    return d;
+    t = (unsigned long) (*t1 - *t0);
+    return t / 1000;
 }
 
 void clear_timeout(uart_ctx_t* ctx)
@@ -164,18 +128,19 @@ void set_timeout(uart_ctx_t* ctx, uint32_t tmo)
 {
     if (tmo == 0xFFFFFFFF)
 	return;
-    driver_get_now(&ctx->t0);
+    ctx->t0 = erl_drv_monotonic_time(ERL_DRV_USEC);
     ctx->tp = &ctx->t0;
     ctx->tmo = tmo;
 }
 
 int next_timeout(uart_ctx_t* ctx)
 {
-    ErlDrvNowData t1;
+    ErlDrvTime t1;
     unsigned long td;
     if (ctx->tp == NULL)
 	return -1;
     driver_get_now(&t1);
+    t1 = erl_drv_monotonic_time(ERL_DRV_USEC);
     td = diff_time_ms(&t1, ctx->tp);
     if (td >= ctx->tmo)
 	return 0;
